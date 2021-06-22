@@ -23,41 +23,41 @@ class ajax extends AWS_CONTROLLER
 {
 	public function setup()
 	{
-		HTTP::no_cache_header();
+		H::no_cache_header();
 	}
 
 	public function follow_people_action()
 	{
-		if (! $_POST['uid'] OR $_POST['uid'] == $this->user_id)
+		if (! H::POST('uid') OR H::POST('uid') == $this->user_id)
 		{
 			die;
 		}
 
 		// 首先判断是否存在关注
-		if ($this->model('follow')->user_follow_check($this->user_id, $_POST['uid']))
+		if ($this->model('follow')->user_follow_check($this->user_id, H::POST('uid')))
 		{
 			$action = 'remove';
 
-			$this->model('follow')->user_follow_del($this->user_id, $_POST['uid']);
+			$this->model('follow')->user_follow_del($this->user_id, H::POST('uid'));
 		}
 		else
 		{
 			if (!$this->user_info['permission']['follow_people'])
 			{
-				H::ajax_json_output(AWS_APP::RSM(null, '-1', AWS_APP::lang()->_t('你的等级还不关注其他人')));
+				H::ajax_error((_t('你的声望还不够, 不能关注其他人')));
 			}
 
 			$action = 'add';
 
-			$this->model('follow')->user_follow_add($this->user_id, $_POST['uid']);
+			if ($this->model('follow')->user_follow_add($this->user_id, H::POST('uid')))
+			{
+				$this->model('notification')->send($this->user_id, H::POST('uid'), 'FOLLOW_USER');
+			}
 
-			$this->model('notify')->send($this->user_id, $_POST['uid'], notify_class::TYPE_PEOPLE_FOCUS, notify_class::CATEGORY_PEOPLE, $this->user_id, array(
-				'from_uid' => $this->user_id
-			));
 		}
 
-		H::ajax_json_output(AWS_APP::RSM(array(
+		H::ajax_response(array(
 			'type' => $action
-		), 1, null));
+		));
 	}
 }

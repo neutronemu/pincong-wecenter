@@ -24,10 +24,11 @@ class main extends AWS_CONTROLLER
 	{
 		$rule_action['rule_type'] = 'white';
 
-		if ($this->user_info['permission']['visit_question'] AND $this->user_info['permission']['visit_site'])
+		if ($this->user_info['permission']['visit_site'])
 		{
-			$rule_action['actions'][] = 'square';
-			$rule_action['actions'][] = 'index';
+			$rule_action['actions'] = array(
+				'index'
+			);
 		}
 
 		return $rule_action;
@@ -35,46 +36,106 @@ class main extends AWS_CONTROLLER
 
 	public function index_action()
 	{
-		if ($_GET['notification_id'])
+		if ($this->user_id AND H::GET('notification_id'))
 		{
-			$this->model('notify')->read_notification($_GET['notification_id'], $this->user_id);
+			$this->model('notification')->mark_as_read(H::GET('notification_id'), $this->user_id);
 		}
 
-		if (! $article_info = $this->model('article')->get_article_info_by_id($_GET['id']))
+		$item_id = H::GET_I('item_id');
+		if ($item_id)
 		{
-			HTTP::error_404();
-		}
-
-		$article_info['user_info'] = $this->model('account')->get_user_info_by_uid($article_info['uid'], true);
-
-		if ($this->user_id)
-		{
-			$article_info['vote_value'] = $this->model('vote')->get_user_vote_value_by_id('article', $article_info['id'], $this->user_id);
-		}
-
-		TPL::assign('article_info', $article_info);
-
-		$article_topics = $this->model('topic')->get_topics_by_item_id($article_info['id'], 'article');
-
-		if ($article_topics)
-		{
-			TPL::assign('article_topics', $article_topics);
-
-			foreach ($article_topics AS $topic_info)
+			if (!$reply = $this->model('article')->get_article_comment_by_id($item_id))
 			{
-				$article_topic_ids[] = $topic_info['topic_id'];
+				H::error_404();
 			}
-		}
-
-		$this->crumb($article_info['title'], '/article/' . $article_info['id']);
-
-		if ($_GET['item_id'])
-		{
-			$comments[] = $this->model('article')->get_comment_by_id($_GET['item_id']);
+			$thread_id = $reply['parent_id'];
 		}
 		else
 		{
-			$comments = $this->model('article')->get_comments($article_info['id'], $_GET['page'], 100);
+			$thread_id = H::GET('id');
+		}
+
+		if (!$thread_info = $this->model('article')->get_article_by_id($thread_id))
+		{
+			H::error_404();
+		}
+
+		$replies_per_page = S::get_int('replies_per_page');
+		if (!$replies_per_page)
+		{
+			$replies_per_page = 100;
+		}
+
+		$url_param[] = 'id-' . $thread_info['id'];
+
+		if (H::GET('sort') == 'DESC')
+		{
+			$sort = 'DESC';
+
+			$url_param[] = 'sort-DESC';
+		}
+		else
+		{
+			$sort = 'ASC';
+		}
+
+		if (H::GET('fold'))
+		{
+			$order_by[] = "fold ASC";
+
+			$url_param[] = 'fold-1';
+		}
+
+		if (H::GET('sort_key') == 'agree_count')
+		{
+			$order_by[] = "reputation " . $sort;
+			$order_by[] = "agree_count " . $sort;
+
+			$url_param[] = 'sort_key-agree_count';
+		}
+		else
+		{
+			$order_by[] = "id " . $sort;
+		}
+
+		if ($this->user_id)
+		{
+			$thread_info['vote_value'] = $this->model('vote')->get_user_vote_value_by_id('article', $thread_info['id'], $this->user_id);
+		}
+
+		TPL::assign('article_info', $thread_info);
+		if ($thread_info['redirect_id'])
+		{
+			TPL::assign('redirect_info', $this->model('content')->get_post_by_id('article', $thread_info['redirect_id']));
+		}
+		if (H::GET('rf'))
+		{
+			TPL::assign('redirected_from', $this->model('content')->get_post_by_id('article', H::GET('rf')));
+		}
+
+		$page_title = CF::page_title($thread_info);
+		$this->crumb($page_title);
+
+		$reply_count = $thread_info['reply_count'];
+		// 判断是否已合并
+		if ($redirect_posts = $this->model('content')->get_redirect_posts('article', $thread_info['id']))
+		{
+			foreach ($redirect_posts AS $key => $val)
+			{
+				$post_ids[] = $val['id'];
+				// 修复合并后回复数
+				$reply_count += $val['reply_count'];
+			}
+		}
+		$post_ids[] = $thread_info['id'];
+
+		if ($item_id)
+		{
+			$comments[] = $reply;
+		}
+		else
+		{
+			$comments = $this->model('article')->get_article_comments($post_ids, H::GET('page'), $replies_per_page, implode(', ', $order_by));
 		}
 
 		if ($comments AND $this->user_id)
@@ -85,137 +146,50 @@ class main extends AWS_CONTROLLER
 				$comment_ids[] = $comment['id'];
 			}
 
-			$comment_vote_values = $this->model('vote')->get_user_vote_values_by_ids('article_comment', $comment_ids, $this->user_id);
+			$comment_vote_values = $this->model('vote')->get_user_vote_values_by_ids('article_reply', $comment_ids, $this->user_id);
 
 			foreach ($comments AS $key => $val)
 			{
 				// 当前用户评论点赞状态
 				$comments[$key]['vote_value'] = $comment_vote_values[$val['id']];
-
-				$comments[$key]['message'] = $this->model('question')->parse_at_user($val['message']);
-
 			}
 		}
 
 		if ($this->user_id)
 		{
-			TPL::assign('user_follow_check', $this->model('follow')->user_follow_check($this->user_id, $article_info['uid']));
+			TPL::assign('user_follow_check', $this->model('follow')->user_follow_check($this->user_id, $thread_info['uid']));
 		}
 
-		TPL::assign('question_related_list', $this->model('question')->get_related_question_list(null, $article_info['title']));
-
-		$this->model('article')->update_view_count($article_info['id']);
+		$this->model('content')->update_view_count('article', $thread_info['id']);
 
 		TPL::assign('comments', $comments);
-		TPL::assign('comments_count', $article_info['comments']);
+		TPL::assign('comments_count', $reply_count);
 
-		TPL::assign('pagination', AWS_APP::pagination()->initialize(array(
-			'base_url' => get_js_url('/article/id-' . $article_info['id']),
-			'total_rows' => $article_info['comments'],
-			'per_page' => 100
-		))->create_links());
+		TPL::assign('pagination', AWS_APP::pagination()->create(array(
+			'base_url' => url_rewrite('/article/') . implode('__', $url_param),
+			'total_rows' => $reply_count,
+			'per_page' => $replies_per_page
+		)));
 
-		TPL::set_meta('keywords', implode(',', $this->model('system')->analysis_keyword($article_info['title'])));
+		TPL::set_meta('keywords', implode(',', $this->model('system')->analysis_keyword($thread_info['title'])));
 
-		TPL::set_meta('description', $article_info['title'] . ' - ' . cjk_substr(str_replace("\r\n", ' ', strip_tags($article_info['message'])), 0, 128, 'UTF-8', '...'));
+		TPL::set_meta('description', $thread_info['title'] . ' - ' . truncate_text(str_replace("\r\n", ' ', $thread_info['message']), 128));
 
-		$recommend_posts = $this->model('posts')->get_recommend_posts_by_topic_ids($article_topic_ids);
-
-		if ($recommend_posts)
+		$topic_ids = $this->model('topic')->get_topic_ids_by_item_id($thread_info['id'], 'article');
+		if ($topic_ids)
 		{
-			foreach ($recommend_posts as $key => $value)
-			{
-				if ($value['id'] AND $value['id'] == $article_info['id'])
-				{
-					unset($recommend_posts[$key]);
+			TPL::assign('topics', $this->model('topic')->get_topics_by_ids($topic_ids));
+		}
 
-					break;
-				}
-			}
+		TPL::assign('related_posts', $this->model('posts')->get_related_posts_by_topic_ids('article', $topic_ids, $thread_info['id']));
+		TPL::assign('recommended_posts', $this->model('posts')->get_recommended_posts('article', $thread_info['id']));
 
-			TPL::assign('recommend_posts', $recommend_posts);
+		if ($this->user_id)
+		{
+			TPL::assign('following', $this->model('postfollow')->is_following('article', $thread_info['id'], $this->user_id));
 		}
 
 		TPL::output('article/index');
 	}
 
-	public function index_square_action()
-	{
-
-		$this->crumb(AWS_APP::lang()->_t('文章'), '/article/');
-
-		if ($_GET['category'])
-		{
-			if (is_digits($_GET['category']))
-			{
-				$category_info = $this->model('system')->get_category_info($_GET['category']);
-			}
-			else
-			{
-				$category_info = $this->model('system')->get_category_info_by_url_token($_GET['category']);
-			}
-		}
-
-		$article_list = $this->model('article')->get_article_list($category_info['id'], $_GET['page'], get_setting('contents_per_page'), 'add_time DESC');
-		$article_list_total = $this->model('article')->found_rows();
-
-		if ($article_list)
-		{
-			foreach ($article_list AS $key => $val)
-			{
-				$article_ids[] = $val['id'];
-
-				$article_uids[$val['uid']] = $val['uid'];
-			}
-
-			$article_topics = $this->model('topic')->get_topics_by_item_ids($article_ids, 'article');
-			$article_users_info = $this->model('account')->get_user_info_by_uids($article_uids);
-
-			foreach ($article_list AS $key => $val)
-			{
-				$article_list[$key]['user_info'] = $article_users_info[$val['uid']];
-			}
-		}
-
-		// 导航
-		if (TPL::is_output('block/content_nav_menu.tpl.htm', 'article/square'))
-		{
-			TPL::assign('content_nav_menu', $this->model('menu')->get_nav_menu_list('article'));
-		}
-
-		//边栏热门话题
-		if (TPL::is_output('block/sidebar_hot_topics.tpl.htm', 'article/square'))
-		{
-			TPL::assign('sidebar_hot_topics', $this->model('module')->sidebar_hot_topics($category_info['id']));
-		}
-
-		if ($category_info)
-		{
-			TPL::assign('category_info', $category_info);
-
-			$this->crumb($category_info['title'], '/article/category-' . $category_info['id']);
-
-			$meta_description = $category_info['title'];
-
-			if ($category_info['description'])
-			{
-				$meta_description .= ' - ' . $category_info['description'];
-			}
-
-			TPL::set_meta('description', $meta_description);
-		}
-
-		TPL::assign('article_list', $article_list);
-		TPL::assign('article_topics', $article_topics);
-
-		TPL::assign('hot_articles', $this->model('article')->get_article_list(null, 1, 10, 'agree_count DESC', 30));
-
-		TPL::assign('pagination', AWS_APP::pagination()->initialize(array(
-			'base_url' => get_js_url('/article/category_id-' . $_GET['category_id']),
-			'total_rows' => $article_list_total,
-			'per_page' => get_setting('contents_per_page')
-		))->create_links());
-
-		TPL::output('article/square');
-	}
 }

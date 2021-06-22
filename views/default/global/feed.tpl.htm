@@ -9,17 +9,17 @@
 	xmlns:slash="http://purl.org/rss/1.0/modules/slash/"
 >
 	<channel>
-		<title><?php echo get_setting('site_name'); ?></title>
-		<atom:link href="<?php echo get_js_url('/feed/'); ?>" rel="self" type="application/rss+xml" />
-		<link><?php echo base_url(); ?></link>
-		<description><?php echo get_setting('description'); ?></description>
+		<title><?php echo S::get('site_name'); ?></title>
+		<atom:link href="<?php echo url_rewrite('/feed/'); ?>" rel="self" type="application/rss+xml" />
+		<link><?php echo base_url(); ?>/</link>
+		<description><?php echo S::get('description'); ?></description>
 		<?php foreach($this->list as $key => $val){ ?>
 		<item>
-			<title><?php echo $val['question_content']; ?></title>
-			<link><?php echo get_js_url('/question/' . $val['question_id']); ?></link>
-			<description><![CDATA[<?php echo nl2br(FORMAT::parse_bbcode($val['question_detail'])); ?>]]></description>
+			<title><?php echo FORMAT::text($val['title'], true); ?></title>
+			<link><?php echo url_rewrite('/question/' . $val['id']); ?></link>
+			<description><![CDATA[<?php echo FORMAT::bbcode($val['message'], true); ?>]]></description>
 			<pubDate><?php echo date('D, d M Y', $val['add_time']); ?></pubDate>
-			<guid><?php echo get_js_url('/question/' . $val['question_id']); ?></guid>
+			<guid><?php echo url_rewrite('/question/' . $val['id']); ?></guid>
 		</item>
 		<?php } ?>
 	</channel>

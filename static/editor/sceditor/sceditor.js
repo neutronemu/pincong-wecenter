@@ -1155,7 +1155,7 @@
 			'left,center,right,justify|font,size,color,removeformat|' +
 			'cut,copy,pastetext|bulletlist,orderedlist,indent,outdent|' +
 			'table|code,quote|horizontalrule,image,email,link,unlink|' +
-			'emoticon,youtube,date,time|ltr,rtl|print,maximize,source',
+			'date,time|ltr,rtl|print,maximize,source',
 
 		/**
 		 * Comma separated list of commands to excludes from the toolbar
@@ -1209,78 +1209,7 @@
 		 */
 		charset: 'utf-8',
 
-		/**
-		 * Compatibility mode for emoticons.
-		 *
-		 * Helps if you have emoticons such as :/ which would put an emoticon
-		 * inside http://
-		 *
-		 * This mode requires emoticons to be surrounded by whitespace or end of
-		 * line chars. This mode has limited As You Type emoticon conversion
-		 * support. It will not replace AYT for end of line chars, only
-		 * emoticons surrounded by whitespace. They will still be replaced
-		 * correctly when loaded just not AYT.
-		 *
-		 * @type {boolean}
-		 */
-		emoticonsCompat: false,
 
-		/**
-		 * If to enable emoticons. Can be changes at runtime using the
-		 * emoticons() method.
-		 *
-		 * @type {boolean}
-		 * @since 1.4.2
-		 */
-		emoticonsEnabled: true,
-
-		/**
-		 * Emoticon root URL
-		 *
-		 * @type {string}
-		 */
-		emoticonsRoot: '',
-		emoticons: {
-			dropdown: {
-				':)': 'emoticons/smile.png',
-				':angel:': 'emoticons/angel.png',
-				':angry:': 'emoticons/angry.png',
-				'8-)': 'emoticons/cool.png',
-				':\'(': 'emoticons/cwy.png',
-				':ermm:': 'emoticons/ermm.png',
-				':D': 'emoticons/grin.png',
-				'<3': 'emoticons/heart.png',
-				':(': 'emoticons/sad.png',
-				':O': 'emoticons/shocked.png',
-				':P': 'emoticons/tongue.png',
-				';)': 'emoticons/wink.png'
-			},
-			more: {
-				':alien:': 'emoticons/alien.png',
-				':blink:': 'emoticons/blink.png',
-				':blush:': 'emoticons/blush.png',
-				':cheerful:': 'emoticons/cheerful.png',
-				':devil:': 'emoticons/devil.png',
-				':dizzy:': 'emoticons/dizzy.png',
-				':getlost:': 'emoticons/getlost.png',
-				':happy:': 'emoticons/happy.png',
-				':kissing:': 'emoticons/kissing.png',
-				':ninja:': 'emoticons/ninja.png',
-				':pinch:': 'emoticons/pinch.png',
-				':pouty:': 'emoticons/pouty.png',
-				':sick:': 'emoticons/sick.png',
-				':sideways:': 'emoticons/sideways.png',
-				':silly:': 'emoticons/silly.png',
-				':sleeping:': 'emoticons/sleeping.png',
-				':unsure:': 'emoticons/unsure.png',
-				':woot:': 'emoticons/w00t.png',
-				':wassat:': 'emoticons/wassat.png'
-			},
-			hidden: {
-				':whistling:': 'emoticons/whistling.png',
-				':love:': 'emoticons/wub.png'
-			}
-		},
 
 		/**
 		 * Width of the editor. Set to null for automatic with
@@ -1758,15 +1687,13 @@
 						'content="text/html;charset={charset}" />' +
 					'<link rel="stylesheet" type="text/css" href="{style}" />' +
 				'</head>' +
-				'<body contenteditable="true" {spellcheck}><p></p></body>' +
+				'<body contenteditable="true" {spellcheck}><div></div></body>' +
 			'</html>',
 
 		toolbarButton: '<a class="sceditor-button sceditor-button-{name}" ' +
 			'data-sceditor-command="{name}" unselectable="on">' +
 			'<div unselectable="on">{dispName}</div></a>',
 
-		emoticon: '<img src="{url}" data-sceditor-emoticon="{key}" ' +
-			'alt="{key}" title="{tooltip}" />',
 
 		fontOpt: '<a class="sceditor-font-option" href="#" ' +
 			'data-font="{font}"><font face="{font}">{font}</font></a>',
@@ -1813,16 +1740,7 @@
 				'<input type="text" id="des" /></div>' +
 			'<div><input type="button" class="button" value="{ins}" /></div>',
 
-		youtubeMenu:
-			'<div><label for="link">{label}</label> ' +
-				'<input type="text" id="link" dir="ltr" placeholder="https://" /></div>' +
-			'<div><input type="button" class="button" value="{insert}" />' +
-				'</div>',
 
-		youtube:
-			'<iframe width="560" height="315" frameborder="0" allowfullscreen ' +
-			'src="https://www.youtube.com/embed/{id}?wmode=opaque&start={time}" ' +
-			'data-youtube-id="{id}"></iframe>'
 	};
 
 	/**
@@ -2512,132 +2430,7 @@
 		},
 		// END_COMMAND
 
-		// START_COMMAND: Emoticons
-		emoticon: {
-			exec: function (caller) {
-				var editor = this;
 
-				var createContent = function (includeMore) {
-					var	moreLink,
-						opts            = editor.opts,
-						emoticonsRoot   = opts.emoticonsRoot || '',
-						emoticonsCompat = opts.emoticonsCompat,
-						rangeHelper     = editor.getRangeHelper(),
-						startSpace      = emoticonsCompat &&
-							rangeHelper.getOuterText(true, 1) !== ' ' ? ' ' : '',
-						endSpace        = emoticonsCompat &&
-							rangeHelper.getOuterText(false, 1) !== ' ' ? ' ' : '',
-						content         = createElement('div'),
-						line            = createElement('div'),
-						perLine         = 0,
-						emoticons       = extend(
-							{},
-							opts.emoticons.dropdown,
-							includeMore ? opts.emoticons.more : {}
-						);
-
-					appendChild(content, line);
-
-					perLine = Math.sqrt(Object.keys(emoticons).length);
-
-					on(content, 'click', 'img', function (e) {
-						editor.insert(startSpace + attr(this, 'alt') + endSpace,
-							null, false).closeDropDown(true);
-
-						e.preventDefault();
-					});
-
-					each(emoticons, function (code, emoticon) {
-						appendChild(line, createElement('img', {
-							src: emoticonsRoot + (emoticon.url || emoticon),
-							alt: code,
-							title: emoticon.tooltip || code
-						}));
-
-						if (line.children.length >= perLine) {
-							line = createElement('div');
-							appendChild(content, line);
-						}
-					});
-
-					if (!includeMore && opts.emoticons.more) {
-						moreLink = createElement('a', {
-							className: 'sceditor-more'
-						});
-
-						appendChild(moreLink,
-							document.createTextNode(editor._('More')));
-
-						on(moreLink, 'click', function (e) {
-							editor.createDropDown(
-								caller, 'more-emoticons', createContent(true)
-							);
-
-							e.preventDefault();
-						});
-
-						appendChild(content, moreLink);
-					}
-
-					return content;
-				};
-
-				editor.createDropDown(caller, 'emoticons', createContent(false));
-			},
-			txtExec: function (caller) {
-				defaultCmds.emoticon.exec.call(this, caller);
-			},
-			tooltip: 'Insert an emoticon'
-		},
-		// END_COMMAND
-
-		// START_COMMAND: YouTube
-		youtube: {
-			_dropDown: function (editor, caller, callback) {
-				var	content = createElement('div');
-
-				appendChild(content, _tmpl('youtubeMenu', {
-					label: editor._('Video URL:'),
-					insert: editor._('Insert')
-				}, true));
-
-				on(content, 'click', '.button', function (e) {
-					var val = find(content, '#link')[0].value;
-					var idMatch = val.match(/(?:v=|v\/|embed\/|youtu.be\/)(.{11})/);
-					var timeMatch = val.match(/[&|?](?:star)?t=((\d+[hms]?){1,3})/);
-					var time = 0;
-
-					if (timeMatch) {
-						each(timeMatch[1].split(/[hms]/), function (i, val) {
-							if (val !== '') {
-								time = (time * 60) + Number(val);
-							}
-						});
-					}
-
-					if (idMatch && /^[a-zA-Z0-9_\-]{11}$/.test(idMatch[1])) {
-						callback(idMatch[1], time);
-					}
-
-					editor.closeDropDown(true);
-					e.preventDefault();
-				});
-
-				editor.createDropDown(caller, 'insertlink', content);
-			},
-			exec: function (btn) {
-				var editor = this;
-
-				defaultCmds.youtube._dropDown(editor, btn, function (id, time) {
-					editor.wysiwygEditorInsertHtml(_tmpl('youtube', {
-						id: id,
-						time: time
-					}));
-				});
-			},
-			tooltip: 'Insert a YouTube video'
-		},
-		// END_COMMAND
 
 		// START_COMMAND: Date
 		date: {
@@ -2720,7 +2513,7 @@
 				editor.focus();
 
 				if (!node || is(node, 'body')) {
-					editor.execCommand('formatBlock', 'p');
+					editor.execCommand('formatBlock', 'div');
 
 					node  = rangeHelper.getFirstBlockParent();
 
@@ -2749,7 +2542,7 @@
 				editor.focus();
 
 				if (!node || is(node, 'body')) {
-					editor.execCommand('formatBlock', 'p');
+					editor.execCommand('formatBlock', 'div');
 
 					node = rangeHelper.getFirstBlockParent();
 
@@ -3155,7 +2948,7 @@
 				html += base.selectedHtml() + endHTML;
 			}
 
-			div           = createElement('p', {}, doc);
+			div           = createElement('div', {}, doc);
 			node          = doc.createDocumentFragment();
 			div.innerHTML = html;
 
@@ -3354,7 +3147,7 @@
 				range = base.selectedRange();
 
 			if (range) {
-				div = createElement('p', {}, doc);
+				div = createElement('div', {}, doc);
 				appendChild(div, range.cloneContents());
 
 				return div.innerHTML;
@@ -3811,154 +3604,7 @@
 		};
 	}
 
-	/**
-	 * Checks all emoticons are surrounded by whitespace and
-	 * replaces any that aren't with with their emoticon code.
-	 *
-	 * @param {HTMLElement} node
-	 * @param {rangeHelper} rangeHelper
-	 * @return {void}
-	 */
-	function checkWhitespace(node, rangeHelper) {
-		var noneWsRegex = /[^\s\xA0\u2002\u2003\u2009\u00a0]+/;
-		var emoticons = node && find(node, 'img[data-sceditor-emoticon]');
 
-		if (!node || !emoticons.length) {
-			return;
-		}
-
-		for (var i = 0; i < emoticons.length; i++) {
-			var emoticon = emoticons[i];
-			var parent$$1 = emoticon.parentNode;
-			var prev = emoticon.previousSibling;
-			var next = emoticon.nextSibling;
-
-			if ((!prev || !noneWsRegex.test(prev.nodeValue.slice(-1))) &&
-				(!next || !noneWsRegex.test((next.nodeValue || '')[0]))) {
-				continue;
-			}
-
-			var range = rangeHelper.cloneSelected();
-			var rangeStart = -1;
-			var rangeStartContainer = range.startContainer;
-			var previousText = prev.nodeValue;
-
-			// For IE's HTMLPhraseElement
-			if (previousText === null) {
-				previousText = prev.innerText || '';
-			}
-
-			previousText += data(emoticon, 'sceditor-emoticon');
-
-			// If the cursor is after the removed emoticon, add
-			// the length of the newly added text to it
-			if (rangeStartContainer === next) {
-				rangeStart = previousText.length + range.startOffset;
-			}
-
-			// If the cursor is set before the next node, set it to
-			// the end of the new text node
-			if (rangeStartContainer === node &&
-				node.childNodes[range.startOffset] === next) {
-				rangeStart = previousText.length;
-			}
-
-			// If the cursor is set before the removed emoticon,
-			// just keep it at that position
-			if (rangeStartContainer === prev) {
-				rangeStart = range.startOffset;
-			}
-
-			if (!next || next.nodeType !== TEXT_NODE) {
-				next = parent$$1.insertBefore(
-					parent$$1.ownerDocument.createTextNode(''), next
-				);
-			}
-
-			next.insertData(0, previousText);
-			remove(prev);
-			remove(emoticon);
-
-			// Need to update the range starting position if it's been modified
-			if (rangeStart > -1) {
-				range.setStart(next, rangeStart);
-				range.collapse(true);
-				rangeHelper.selectRange(range);
-			}
-		}
-	}
-
-	/**
-	 * Replaces any emoticons inside the root node with images.
-	 *
-	 * emoticons should be an object where the key is the emoticon
-	 * code and the value is the HTML to replace it with.
-	 *
-	 * @param {HTMLElement} root
-	 * @param {Object<string, string>} emoticons
-	 * @param {boolean} emoticonsCompat
-	 * @return {void}
-	 */
-	function replace(root, emoticons, emoticonsCompat) {
-		var	doc           = root.ownerDocument;
-		var space         = '(^|\\s|\xA0|\u2002|\u2003|\u2009|$)';
-		var emoticonCodes = [];
-		var emoticonRegex = {};
-
-		// TODO: Make this tag configurable.
-		if (parent(root, 'code')) {
-			return;
-		}
-
-		each(emoticons, function (key) {
-			emoticonRegex[key] = new RegExp(space + regex(key) + space);
-			emoticonCodes.push(key);
-		});
-
-		// Sort keys longest to shortest so that longer keys
-		// take precedence (avoids bugs with shorter keys partially
-		// matching longer ones)
-		emoticonCodes.sort(function (a, b) {
-			return b.length - a.length;
-		});
-
-		(function convert(node) {
-			node = node.firstChild;
-
-			while (node) {
-				// TODO: Make this tag configurable.
-				if (node.nodeType === ELEMENT_NODE && !is(node, 'code')) {
-					convert(node);
-				}
-
-				if (node.nodeType === TEXT_NODE) {
-					for (var i = 0; i < emoticonCodes.length; i++) {
-						var text  = node.nodeValue;
-						var key   = emoticonCodes[i];
-						var index = emoticonsCompat ?
-							text.search(emoticonRegex[key]) :
-							text.indexOf(key);
-
-						if (index > -1) {
-							// When emoticonsCompat is enabled this will be the
-							// position after any white space
-							var startIndex = text.indexOf(key, index);
-							var fragment   = parseHTML(emoticons[key], doc);
-							var after      = text.substr(startIndex + key.length);
-
-							fragment.appendChild(doc.createTextNode(after));
-
-							node.nodeValue = text.substr(0, startIndex);
-							node.parentNode
-								.insertBefore(fragment, node.nextSibling);
-						}
-					}
-				}
-
-				node = node.nextSibling;
-			}
-		}(root));
-	}
 
 	var globalWin  = window;
 	var globalDoc  = document;
@@ -3984,7 +3630,7 @@
 		traverse(body, function (node) {
 			if (isInline(node, true)) {
 				if (!wrapper) {
-					wrapper = createElement('p', {}, doc);
+					wrapper = createElement('div', {}, doc);
 					insertBefore(wrapper, node);
 				}
 
@@ -4251,14 +3897,6 @@
 		 */
 		var pasteContentFragment;
 
-		/**
-		 * All the emoticons from dropdown, more and hidden combined
-		 * and with the emoticons root set
-		 *
-		 * @type {!Object<string, string>}
-		 * @private
-		 */
-		var allEmoticons = {};
 
 		/**
 		 * Current icon set if any
@@ -4273,7 +3911,6 @@
 		 * @private
 		 */
 		var	init,
-			replaceEmoticons,
 			handleCommand,
 			saveRange,
 			initEditor,
@@ -4283,7 +3920,7 @@
 			initOptions,
 			initEvents,
 			initResize,
-			initEmoticons,
+
 			handlePasteEvt,
 			handlePasteData,
 			handleKeyDown,
@@ -4301,8 +3938,7 @@
 			checkSelectionChanged,
 			checkNodeChanged,
 			autofocus,
-			emoticonsKeyPress,
-			emoticonsCheckWhitespace,
+
 			currentStyledBlockNode,
 			triggerValueChanged,
 			valueChangedBlur,
@@ -4326,8 +3962,7 @@
 			true, {}, defaultOptions, userOptions
 		);
 
-		// Don't deep extend emoticons (fixes #565)
-		base.opts.emoticons = userOptions.emoticons || defaultOptions.emoticons;
+
 
 		/**
 		 * Creates the editor iframe and textarea
@@ -4365,7 +4000,7 @@
 
 			// create the editor
 			initPlugins();
-			initEmoticons();
+
 			initToolBar();
 			initEditor();
 			initOptions();
@@ -4552,7 +4187,7 @@
 			}
 
 			attr(editorContainer, 'id', options.id);
-			base.emoticons(options.emoticonsEnabled);
+
 		};
 
 		/**
@@ -4585,9 +4220,7 @@
 			on(wysiwygBody, checkSelectionEvents, checkSelectionChanged);
 			on(wysiwygBody, eventsToForward, handleEvent);
 
-			if (options.emoticonsCompat && globalWin.getSelection) {
-				on(wysiwygBody, 'keyup', emoticonsCheckWhitespace);
-			}
+
 
 			on(wysiwygBody, 'blur', function () {
 				if (!base.val()) {
@@ -4854,36 +4487,7 @@
 			});
 		};
 
-		/**
-		 * Prefixes and preloads the emoticon images
-		 * @private
-		 */
-		initEmoticons = function () {
-			var	emoticons = options.emoticons;
-			var root      = options.emoticonsRoot || '';
 
-			if (emoticons) {
-				allEmoticons = extend(
-					{}, emoticons.more, emoticons.dropdown, emoticons.hidden
-				);
-			}
-
-			each(allEmoticons, function (key, url) {
-				allEmoticons[key] = _tmpl('emoticon', {
-					key: key,
-					// Prefix emoticon root to emoticon urls
-					url: root + (url.url || url),
-					tooltip: url.tooltip || key
-				});
-
-				// Preload the emoticon
-				if (options.emoticonsEnabled) {
-					preLoadCache.push(createElement('img', {
-						src: root + (url.url || url)
-					}));
-				}
-			});
-		};
 
 		/**
 		 * Autofocus the editor
@@ -4911,7 +4515,7 @@
 
 			if (focusEnd) {
 				if (!(node = wysiwygBody.lastChild)) {
-					node = createElement('p', {}, wysiwygDocument);
+					node = createElement('div', {}, wysiwygDocument);
 					appendChild(wysiwygBody, node);
 				}
 
@@ -5430,15 +5034,15 @@
 			var isIeOrEdge = IE_VER || edge;
 			var editable = wysiwygBody;
 			var clipboard = e.clipboardData;
-			var loadImage = function (file) {
-				var reader = new FileReader();
-				reader.onload = function (e) {
-					handlePasteData({
-						html: '<img src="' + e.target.result + '" />'
-					});
-				};
-				reader.readAsDataURL(file);
-			};
+			//var loadImage = function (file) {
+			//	var reader = new FileReader();
+			//	reader.onload = function (e) {
+			//		handlePasteData({
+			//			html: '<img src="' + e.target.result + '" />'
+			//		});
+			//	};
+			//	reader.readAsDataURL(file);
+			//};
 
 			// Modern browsers with clipboard API - everything other than _very_
 			// old android web views and UC browser which doesn't support the
@@ -5461,7 +5065,7 @@
 				}
 				// Call plugins here with file?
 				data$$1.text = data$$1['text/plain'];
-				data$$1.html = data$$1['text/html'];
+				//data$$1.html = data$$1['text/html'];
 
 				handlePasteData(data$$1);
 			// If contentsFragment exists then we are already waiting for a
@@ -5479,7 +5083,8 @@
 				}
 
 				setTimeout(function () {
-					var html = editable.innerHTML;
+					//var html = editable.innerHTML;
+					var text = editable.innerText;
 
 					editable.innerHTML = '';
 					appendChild(editable, pasteContentFragment);
@@ -5488,7 +5093,8 @@
 
 					rangeHelper.restoreRange();
 
-					handlePasteData({ html: html });
+					//handlePasteData({ html: html });
+					handlePasteData({ text: text });
 				}, 0);
 			}
 		};
@@ -5593,7 +5199,6 @@
 			// without affecting the cursor position
 			rangeHelper.insertHTML(html, endHtml);
 			rangeHelper.saveRange();
-			replaceEmoticons();
 
 			// Scroll the editor after the end of the selection
 			marker   = find(wysiwygBody, '#sceditor-end-marker')[0];
@@ -5980,11 +5585,10 @@
 		 */
 		base.setWysiwygEditorValue = function (value) {
 			if (!value) {
-				value = '<p>' + (IE_VER ? '' : '<br />') + '</p>';
+				value = '<div>' + (IE_VER ? '' : '<br />') + '</div>';
 			}
 
 			wysiwygBody.innerHTML = value;
-			replaceEmoticons();
 
 			appendNewLine();
 			triggerValueChanged();
@@ -6018,16 +5622,6 @@
 			original.value = base.val();
 		};
 
-		/**
-		 * Replaces any emoticon codes in the passed HTML
-		 * with their emoticon images
-		 * @private
-		 */
-		replaceEmoticons = function () {
-			if (options.emoticonsEnabled) {
-				replace(wysiwygBody, allEmoticons, options.emoticonsCompat);
-			}
-		};
 
 		/**
 		 * If the editor is in source code mode
@@ -6442,7 +6036,7 @@
 
 					// Add line break after if has styling
 					if (!is(node, '.sceditor-nlf') && hasStyling(node)) {
-						var paragraph = createElement('p', {}, wysiwygDocument);
+						var paragraph = createElement('div', {}, wysiwygDocument);
 						paragraph.className = 'sceditor-nlf';
 						paragraph.innerHTML = !IE_BR_FIX$2 ? '<br />' : '';
 						appendChild(wysiwygBody, paragraph);
@@ -6852,114 +6446,7 @@
 				.bind('valuechanged', handler, excludeWysiwyg, excludeSource);
 		};
 
-		/**
-		 * Emoticons keypress handler
-		 * @private
-		 */
-		emoticonsKeyPress = function (e) {
-			var	replacedEmoticon,
-				cachePos       = 0,
-				emoticonsCache = base.emoticonsCache,
-				curChar        = String.fromCharCode(e.which);
 
-			// TODO: Make configurable
-			if (closest(currentBlockNode, 'code')) {
-				return;
-			}
-
-			if (!emoticonsCache) {
-				emoticonsCache = [];
-
-				each(allEmoticons, function (key, html) {
-					emoticonsCache[cachePos++] = [key, html];
-				});
-
-				emoticonsCache.sort(function (a, b) {
-					return a[0].length - b[0].length;
-				});
-
-				base.emoticonsCache = emoticonsCache;
-				base.longestEmoticonCode =
-					emoticonsCache[emoticonsCache.length - 1][0].length;
-			}
-
-			replacedEmoticon = rangeHelper.replaceKeyword(
-				base.emoticonsCache,
-				true,
-				true,
-				base.longestEmoticonCode,
-				options.emoticonsCompat,
-				curChar
-			);
-
-			if (replacedEmoticon) {
-				if (!options.emoticonsCompat || !/^\s$/.test(curChar)) {
-					e.preventDefault();
-				}
-			}
-		};
-
-		/**
-		 * Makes sure emoticons are surrounded by whitespace
-		 * @private
-		 */
-		emoticonsCheckWhitespace = function () {
-			checkWhitespace(currentBlockNode, rangeHelper);
-		};
-
-		/**
-		 * Gets if emoticons are currently enabled
-		 * @return {boolean}
-		 * @function
-		 * @name emoticons
-		 * @memberOf SCEditor.prototype
-		 * @since 1.4.2
-		 */
-		/**
-		 * Enables/disables emoticons
-		 *
-		 * @param {boolean} enable
-		 * @return {this}
-		 * @function
-		 * @name emoticons^2
-		 * @memberOf SCEditor.prototype
-		 * @since 1.4.2
-		 */
-		base.emoticons = function (enable) {
-			if (!enable && enable !== false) {
-				return options.emoticonsEnabled;
-			}
-
-			options.emoticonsEnabled = enable;
-
-			if (enable) {
-				on(wysiwygBody, 'keypress', emoticonsKeyPress);
-
-				if (!base.sourceMode()) {
-					rangeHelper.saveRange();
-
-					replaceEmoticons();
-					triggerValueChanged(false);
-
-					rangeHelper.restoreRange();
-				}
-			} else {
-				var emoticons =
-					find(wysiwygBody, 'img[data-sceditor-emoticon]');
-
-				each(emoticons, function (_, img) {
-					var text = data(img, 'sceditor-emoticon');
-					var textNode = wysiwygDocument.createTextNode(text);
-					img.parentNode.replaceChild(textNode, img);
-				});
-
-				off(wysiwygBody, 'keypress', emoticonsKeyPress);
-
-				triggerValueChanged();
-			}
-
-			return base;
-		};
 
 		/**
 		 * Gets the current WYSIWYG editors inline CSS
@@ -7262,7 +6749,7 @@
 			attr(block, 'style', '');
 
 			if (!is(block, 'p,div,td')) {
-				convertElement(block, 'p');
+				convertElement(block, 'div');
 			}
 
 			rangeHelper.restoreRange();

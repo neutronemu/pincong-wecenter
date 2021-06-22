@@ -20,98 +20,28 @@ if (!defined('IN_ANWSION'))
 
 class topic_class extends AWS_MODEL
 {
-	public function get_topic_list($where = null, $order = 'topic_id DESC', $limit = 10, $page = null)
+	public function get_topic_list($where, $order, $page, $per_page)
 	{
-		if ($topic_list = $this->fetch_page('topic', $where, $order, $page, $limit))
-		{
-			foreach ($topic_list AS $key => $val)
-			{
-				if (!$val['url_token'])
-				{
-					$topic_list[$key]['url_token'] = rawurlencode($val['topic_title']);
-				}
-			}
-		}
+		$topic_list = $this->fetch_page('topic', $where, $order, $page, $per_page);
 
 		return $topic_list;
 	}
 
-	public function get_focus_topic_list($uid, $limit = 20)
+	public function get_focus_topic_list($uid, $page, $per_page)
 	{
 		if (!$uid)
 		{
 			return false;
 		}
 
-		if (!$focus_topics = $this->fetch_all('topic_focus', 'uid = ' . intval($uid)))
+		if (!$topic_ids = $this->fetch_column('topic_focus', 'topic_id', ['uid', 'eq', $uid, 'i'], 'add_time DESC', $page, $per_page))
 		{
 			return false;
 		}
 
-		foreach ($focus_topics AS $key => $val)
-		{
-			$topic_ids[] = $val['topic_id'];
-		}
-
-		if ($topic_list = $this->fetch_all('topic', 'topic_id IN(' . implode(',', $topic_ids) . ')', 'discuss_count DESC', $limit))
-		{
-			foreach ($topic_list AS $key => $val)
-			{
-				if (!$val['url_token'])
-				{
-					$topic_list[$key]['url_token'] = urlencode($val['topic_title']);
-				}
-			}
-		}
+		$topic_list = $this->fetch_all('topic', ['topic_id', 'in', $topic_ids, 'i'], 'discuss_count DESC');
 
 		return $topic_list;
-	}
-
-	public function get_focus_topic_ids_by_uid($uid)
-	{
-		if (!$uid)
-		{
-			return false;
-		}
-
-		if (!$topic_focus = $this->fetch_all('topic_focus', "uid = " . intval($uid)))
-		{
-			return false;
-		}
-
-		foreach ($topic_focus as $key => $val)
-		{
-			$topic_ids[$val['topic_id']] = $val['topic_id'];
-		}
-
-		return $topic_ids;
-	}
-
-	public function get_sized_file($size = null, $pic_file = null)
-	{
-		if (! $pic_file)
-		{
-			return false;
-		}
-
-		$original_file = str_replace('_' . AWS_APP::config()->get('image')->topic_thumbnail['min']['w'] . '_' . AWS_APP::config()->get('image')->topic_thumbnail['min']['h'] . '.', '.', $pic_file);
-
-		if (! $size)
-		{
-			return $original_file;
-		}
-
-		// Fix date() bug
-		if (!file_exists(get_setting('upload_dir') . '/topic/' . $original_file))
-		{
-			$dir_info = explode('/', $original_file);
-
-			$dir_date = intval($dir_info[0]);
-
-			$original_file = ($dir_date + 1) . '/' . basename($original_file);
-		}
-
-		return str_replace('.', '_' . AWS_APP::config()->get('image')->topic_thumbnail[$size]['w'] . '_' . AWS_APP::config()->get('image')->topic_thumbnail[$size]['h'] . '.', $original_file);
 	}
 
 	/**
@@ -124,45 +54,33 @@ class topic_class extends AWS_MODEL
 	public function get_topic_by_id($topic_id)
 	{
 		static $topics;
+		$topic_id = intval($topic_id);
 
-		if (! $topic_id)
+		if (!$topic_id)
 		{
 			return false;
 		}
 
-		if (! $topics[$topic_id])
+		if (!$topics[$topic_id])
 		{
-			$topics[$topic_id] = $this->fetch_row('topic', 'topic_id = ' . intval($topic_id));
-
-			if ($topics[$topic_id] AND !$topics[$topic_id]['url_token'])
-			{
-				$topics[$topic_id]['url_token'] = urlencode($topics[$topic_id]['topic_title']);
-			}
+			$topics[$topic_id] = $this->fetch_row('topic', ['topic_id', 'eq', $topic_id, 'i']);
 		}
 
 		return $topics[$topic_id];
 	}
 
-	public function get_topic_by_url_token($url_token)
+	public function get_merged_topic_ids_by_id($topic_id)
 	{
-		if ($topic_id = $this->fetch_one('topic', 'topic_id', "url_token = '" . $this->quote($url_token) . "'"))
-		{
-			return $this->get_topic_by_id($topic_id);
-		}
-	}
-
-	public function get_merged_topic_ids($topic_id)
-	{
-		return $this->fetch_all('topic_merge', 'target_id = ' . intval($topic_id));
+		return $this->fetch_column('topic_merge', 'source_id', ['target_id', 'eq', $topic_id, 'i']);
 	}
 
 	public function merge_topic($source_id, $target_id, $uid)
 	{
-		if ($this->count('topic', 'topic_id = ' . intval($source_id) . ' AND merged_id = 0'))
+		if ($this->count('topic', [['topic_id', 'eq', $source_id, 'i'], ['merged_id', 'eq', 0]]))
 		{
 			$this->update('topic', array(
 				'merged_id' => intval($target_id)
-			), 'topic_id = ' . intval($source_id));
+			), ['topic_id', 'eq', $source_id, 'i']);
 
 			return $this->insert('topic_merge', array(
 				'source_id' => intval($source_id),
@@ -179,29 +97,22 @@ class topic_class extends AWS_MODEL
 	{
 		$this->update('topic', array(
 			'merged_id' => 0
-		), 'topic_id = ' . intval($source_id));
+		), ['topic_id', 'eq', $source_id, 'i']);
 
-		return $this->delete('topic_merge', 'source_id = ' . intval($source_id) . ' AND target_id = ' . intval($target_id));
+		return $this->delete('topic_merge', [['source_id', 'eq', $source_id, 'i'], ['target_id', 'eq', $target_id, 'i']]);
 	}
 
 	public function get_topics_by_ids($topic_ids)
 	{
-		if (!$topic_ids OR !is_array($topic_ids))
+		if (!is_array($topic_ids) OR count($topic_ids) < 1)
 		{
 			return false;
 		}
 
-		array_walk_recursive($topic_ids, 'intval_string');
-
-		$topics = $this->fetch_all('topic', 'topic_id IN(' . implode(',', $topic_ids) . ')');
+		$topics = $this->fetch_all('topic', ['topic_id', 'in', $topic_ids, 'i']);
 
 		foreach ($topics AS $key => $val)
 		{
-			if (!$val['url_token'])
-			{
-				$val['url_token'] = urlencode($val['topic_title']);
-			}
-
 			$result[$val['topic_id']] = $val;
 		}
 
@@ -210,7 +121,7 @@ class topic_class extends AWS_MODEL
 
 	public function get_topic_by_title($topic_title)
 	{
-		if ($topic_id = $this->fetch_one('topic', 'topic_id', "topic_title = '" . $this->quote(htmlspecialchars($topic_title)) . "'"))
+		if ($topic_id = $this->fetch_one('topic', 'topic_id', ['topic_title', 'eq', htmlspecialchars($topic_title), 's']))
 		{
 			return $this->get_topic_by_id($topic_id);
 		}
@@ -218,13 +129,11 @@ class topic_class extends AWS_MODEL
 
 	public function get_topic_id_by_title($topic_title)
 	{
-		return $this->fetch_one('topic', 'topic_id', "topic_title = '" . $this->quote(htmlspecialchars($topic_title)) . "'");
+		return $this->fetch_one('topic', 'topic_id', ['topic_title', 'eq', htmlspecialchars($topic_title), 's']);
 	}
 
 	public function save_topic($topic_title, $uid = null, $auto_create = true, $topic_description = null)
 	{
-		$topic_title = str_replace(array('-', '/'), '_', $topic_title);
-
 		if (!$topic_id = $this->get_topic_id_by_title($topic_title) AND $auto_create)
 		{
 			$topic_id = $this->insert('topic', array(
@@ -233,13 +142,6 @@ class topic_class extends AWS_MODEL
 				'topic_description' => htmlspecialchars($topic_description),
 				'topic_lock' => 0
 			));
-
-			// TODO: 在管理后台添加选项
-			// 创建者不再自动关注话题
-			//if ($uid)
-			//{
-			//	$this->add_focus_topic($uid, $topic_id);
-			//}
 		}
 		else
 		{
@@ -247,16 +149,6 @@ class topic_class extends AWS_MODEL
 		}
 
 		return $topic_id;
-	}
-
-	public function remove_topic_relation($uid, $topic_id, $item_id, $type)
-	{
-		if (!$topic_info = $this->get_topic_by_id($topic_id))
-		{
-			return false;
-		}
-
-		return $this->delete('topic_relation', 'topic_id = ' . intval($topic_id) . ' AND item_id = ' . intval($item_id) . " AND `type` = '" . $this->quote($type) . "'");
 	}
 
 	public function update_topic($uid, $topic_id, $topic_title = null, $topic_description = null, $topic_pic = null)
@@ -268,12 +160,16 @@ class topic_class extends AWS_MODEL
 
 		if ($topic_title)
 		{
-			$data['topic_title'] = htmlspecialchars(my_trim($topic_title));
+			$data['topic_title'] = htmlspecialchars($topic_title);
 		}
 
 		if ($topic_description)
 		{
 			$data['topic_description'] = htmlspecialchars($topic_description);
+		}
+		else
+		{
+			$data['topic_description'] = null;
 		}
 
 		if ($topic_pic)
@@ -283,7 +179,7 @@ class topic_class extends AWS_MODEL
 
 		if ($data)
 		{
-			$this->update('topic', $data, 'topic_id = ' . intval($topic_id));
+			$this->update('topic', $data, ['topic_id', 'eq', $topic_id, 'i']);
 		}
 
 		return TRUE;
@@ -293,29 +189,15 @@ class topic_class extends AWS_MODEL
 	 *
 	 * 锁定/解锁话题
 	 * @param int $topic_id
-	 * @param int $topic_lock
+	 * @param int $status
 	 *
 	 * @return boolean true|false
 	 */
-	public function lock_topic_by_ids($topic_ids, $topic_lock = 0)
+	public function lock_topic_by_id($topic_id, $status)
 	{
-		if (!$topic_ids)
-		{
-			return false;
-		}
-
-		if (!is_array($topic_ids))
-		{
-			$topic_ids = array(
-				$topic_ids,
-			);
-		}
-
-		array_walk_recursive($topic_ids, 'intval_string');
-
 		return $this->update('topic', array(
-			'topic_lock' => $topic_lock
-		), 'topic_id IN (' . implode(',', $topic_ids) . ')');
+			'topic_lock' => intval(!!$status)
+		), ['topic_id', 'eq', $topic_id, 'i']);
 
 	}
 
@@ -328,6 +210,8 @@ class topic_class extends AWS_MODEL
 
 	public function add_focus_topic($uid, $topic_id)
 	{
+		$where = ['topic_id', 'eq', $topic_id, 'i'];
+
 		if (! $this->has_focus_topic($uid, $topic_id))
 		{
 			if ($this->insert('topic_focus', array(
@@ -336,7 +220,7 @@ class topic_class extends AWS_MODEL
 				"add_time" => fake_time()
 			)))
 			{
-				$this->query('UPDATE ' . $this->get_table('topic') . " SET focus_count = focus_count + 1 WHERE topic_id = " . intval($topic_id));
+				$this->update('topic', '`focus_count` = `focus_count` + 1', $where);
 			}
 
 			$result = 'add';
@@ -346,42 +230,38 @@ class topic_class extends AWS_MODEL
 		{
 			if ($this->delete_focus_topic($topic_id, $uid))
 			{
-				$this->query('UPDATE ' . $this->get_table('topic') . " SET focus_count = focus_count - 1 WHERE topic_id = " . intval($topic_id));
+				$this->update('topic', '`focus_count` = `focus_count` - 1', $where);
 			}
 
 			$result = 'remove';
 		}
-
-		// 更新个人计数
-		$focus_count = $this->count('topic_focus', 'uid = ' . intval($uid));
-
-		$this->model('account')->update_users_fields(array(
-			'topic_focus_count' => $focus_count
-		), $uid);
 
 		return $result;
 	}
 
 	public function delete_focus_topic($topic_id, $uid)
 	{
-		return $this->delete('topic_focus', 'uid = ' . intval($uid) . ' AND topic_id = ' . intval($topic_id));
+		return $this->delete('topic_focus', [['uid', 'eq', $uid, 'i'], ['topic_id', 'eq', $topic_id, 'i']]);
 	}
 
 	public function has_focus_topic($uid, $topic_id)
 	{
-		return $this->fetch_one('topic_focus', 'focus_id', "uid = " . intval($uid) . " AND topic_id = " . intval($topic_id));
+		return $this->fetch_one('topic_focus', 'focus_id', [['uid', 'eq', $uid, 'i'], ['topic_id', 'eq', $topic_id, 'i']]);
 	}
 
 	public function has_focus_topics($uid, $topic_ids)
 	{
-		if (!is_array($topic_ids))
+		if (!is_array($topic_ids) OR count($topic_ids) < 1)
 		{
 			return false;
 		}
 
-		array_walk_recursive($topic_ids, 'intval_string');
+		$where = [
+			['uid', 'eq', $uid, 'i'],
+			['topic_id', 'in', $topic_ids, 'i']
+		];
 
-		if ($focus = $this->query_all('SELECT focus_id, topic_id FROM ' . $this->get_table('topic_focus') . " WHERE uid = " . intval($uid) . " AND topic_id IN(" . implode(',', $topic_ids) . ")"))
+		if ($focus = $this->fetch_all('topic_focus', $where))
 		{
 			foreach ($focus as $key => $val)
 			{
@@ -400,11 +280,11 @@ class topic_class extends AWS_MODEL
 		}
 
 		$this->update('topic', array(
-			'discuss_count' => $this->count('topic_relation', 'topic_id = ' . intval($topic_id)),
-			'discuss_count_last_week' => $this->count('topic_relation', 'add_time > ' . (time() - 604800) . ' AND topic_id = ' . intval($topic_id)),
-			'discuss_count_last_month' => $this->count('topic_relation', 'add_time > ' . (time() - 2592000) . ' AND topic_id = ' . intval($topic_id)),
-			'discuss_count_update' => intval($this->fetch_one('topic_relation', 'add_time', 'topic_id = ' . intval($topic_id), 'add_time DESC'))
-		), 'topic_id = ' . intval($topic_id));
+			'discuss_count' => $this->count('topic_relation', ['topic_id', 'eq', $topic_id, 'i']),
+			'discuss_count_last_week' => $this->count('topic_relation', [['add_time', 'gt', time() - 604800], ['topic_id', 'eq', $topic_id, 'i']]),
+			'discuss_count_last_month' => $this->count('topic_relation', [['add_time', 'gt', time() - 2592000], ['topic_id', 'eq', $topic_id, 'i']]),
+			'discuss_count_update' => intval($this->fetch_one('topic_relation', 'add_time', ['topic_id', 'eq', $topic_id, 'i'], 'add_time DESC'))
+		), ['topic_id', 'eq', $topic_id, 'i']);
 	}
 
 	/**
@@ -428,8 +308,6 @@ class topic_class extends AWS_MODEL
 			$topic_ids[] = $topic_id;
 		}
 
-		array_walk_recursive($topic_ids, 'intval_string');
-
 		foreach($topic_ids as $topic_id)
 		{
 			if (!$topic_info = $this->get_topic_by_id($topic_id))
@@ -439,305 +317,21 @@ class topic_class extends AWS_MODEL
 
 			if ($topic_info['topic_pic'])
 			{
-				foreach (AWS_APP::config()->get('image')->topic_thumbnail as $size)
+				foreach (AWS_APP::config()->get('image')->topic_thumbnail as $key => $val)
 				{
-					@unlink(get_setting('upload_dir') . '/topic/' . str_replace(AWS_APP::config()->get('image')->topic_thumbnail['min']['w'] . '_' . AWS_APP::config()->get('image')->topic_thumbnail['min']['h'], $size['w'] . '_' . $size['h'], $topic_info['topic_pic']));
-
+					@unlink(S::get('upload_dir') . '/topic/' . $this->get_image_path($topic_id, $key));
 				}
-
-				@unlink(get_setting('upload_dir') . '/topic/' . str_replace('_' . AWS_APP::config()->get('image')->topic_thumbnail['min']['w'] . '_' . AWS_APP::config()->get('image')->topic_thumbnail['min']['h'], '', $topic_info['topic_pic']));
 			}
 
-			$this->delete('topic_focus', 'topic_id = ' . intval($topic_id));
-			$this->delete('topic_relation', 'topic_id = ' . intval($topic_id));
-			$this->delete('related_topic', 'topic_id = ' . intval($topic_id) . ' OR related_id = ' . intval($topic_id));
-			$this->delete('topic', 'topic_id = ' . intval($topic_id));
-
-			$this->update('topic', array(
-				'parent_id' => 0
-			), 'parent_id = ' . intval($topic_id));
+			$this->delete('topic_focus', ['topic_id', 'eq', $topic_id, 'i']);
+			$this->delete('topic_relation', ['topic_id', 'eq', $topic_id, 'i']);
+			$this->delete('related_topic', [['topic_id', 'eq', $topic_id, 'i'], 'or', ['related_id', 'eq', $topic_id, 'i']]);
+			$this->delete('topic', ['topic_id', 'eq', $topic_id, 'i']);
 		}
 
 		return true;
 	}
 
-	// 我关注的人关注的话题
-	public function get_user_recommend_v2($uid, $limit = 10)
-	{
-		$topic_focus_ids = array(0);
-
-		$follow_uids = array(0);
-
-		if ($topic_focus = $this->query_all("SELECT topic_id FROM " . $this->get_table("topic_focus") . " WHERE uid = " . (int)$uid))
-		{
-			foreach ($topic_focus as $key => $val)
-			{
-				$topic_focus_ids[] = $val['topic_id'];
-			}
-		}
-
-		if ($friends = $this->model('follow')->get_user_friends($uid, false))
-		{
-			foreach ($friends as $key => $val)
-			{
-				$follow_uids[] = $val['uid'];
-				$follow_users_array[$val['uid']] = $val;
-			}
-		}
-
-		if (! $follow_uids)
-		{
-			return $this->get_topic_list("topic_id NOT IN(" . implode($topic_focus_ids, ',') . ")", 'topic_id DESC', $limit);
-		}
-
-		if ($topic_focus = $this->query_all("SELECT DISTINCT topic_id, uid FROM " . $this->get_table("topic_focus") . " WHERE uid IN(" . implode($follow_uids, ',') . ") AND topic_id NOT IN (" . implode($topic_focus_ids, ',') . ") ORDER BY focus_id DESC LIMIT " . $limit))
-		{
-			foreach ($topic_focus as $key => $val)
-			{
-				$topic_ids[] = $val['topic_id'];
-				$topic_id_focus_uid[$val['topic_id']] = $val['uid'];
-			}
-		}
-		if (! $topic_ids)
-		{
-			if ($topic_focus_ids)
-			{
-				return $this->get_topic_list("topic_id NOT IN (" . implode($topic_focus_ids, ',') . ")", 'topic_id DESC', $limit);
-			}
-			else
-			{
-				return $this->get_topic_list(null, 'topic_id DESC', $limit);
-			}
-		}
-
-		if ($topic_focus_ids)
-		{
-			$topics = $this->fetch_all('topic', 'topic_id IN(' . implode($topic_ids, ',') . ') AND topic_id NOT IN(' . implode($topic_focus_ids, ',') . ')', 'topic_id DESC', $limit);
-		}
-		else
-		{
-			$topics = $this->fetch_all('topic', 'topic_id IN(' . implode($topic_ids, ',') . ')', 'topic_id DESC', $limit);
-		}
-
-		foreach ($topics as $key => $val)
-		{
-			// TODO: 何处用到?
-			$topics[$key]['focus_users'] = $follow_users_array[$topic_id_focus_uid[$val['topic_id']]];
-
-			if (!$val['url_token'])
-			{
-				$topics[$key]['url_token'] = urlencode($val['topic_title']);
-			}
-		}
-
-		return $topics;
-	}
-
-	public function get_focus_users_by_topic($topic_id, $limit = 10)
-	{
-		$user_list = array();
-
-		$uids = $this->query_all("SELECT DISTINCT uid FROM " . $this->get_table('topic_focus') . " WHERE topic_id = " . intval($topic_id), $limit);
-
-		if ($uids)
-		{
-			$user_list_query = $this->model('account')->get_user_info_by_uids(fetch_array_value($uids, 'uid'));
-
-			if ($user_list_query)
-			{
-				foreach ($user_list_query AS $user_info)
-				{
-					$user_list[$user_info['uid']]['uid'] = $user_info['uid'];
-
-					$user_list[$user_info['uid']]['user_name'] = $user_info['user_name'];
-
-					$user_list[$user_info['uid']]['avatar_file'] = UF::avatar($user_info, 'mid');
-
-					$user_list[$user_info['uid']]['url'] = get_js_url('/people/' . $user_info['url_token']);
-				}
-			}
-		}
-
-		return $user_list;
-	}
-
-	public function get_item_ids_by_topics_id($topic_id, $type = null, $limit = null)
-	{
-		return $this->get_item_ids_by_topics_ids(array(
-			$topic_id
-		), $type, $limit);
-	}
-
-	public function get_item_ids_by_topics_ids($topic_ids, $type = null, $limit = null)
-	{
-		if (!is_array($topic_ids))
-		{
-			return false;
-		}
-
-		array_walk_recursive($topic_ids, 'intval_string');
-
-		$where[] = 'topic_id IN(' . implode(',', $topic_ids) . ')';
-
-		if ($type)
-		{
-			$where[] = "`type` = '" . $this->quote($type) . "'";
-		}
-
-		if ($result = $this->query_all("SELECT item_id FROM " . $this->get_table('topic_relation') . " WHERE " . implode(' AND ', $where), $limit))
-		{
-			foreach ($result AS $key => $val)
-			{
-				$item_ids[] = $val['item_id'];
-			}
-		}
-
-		return $item_ids;
-	}
-
-	public function get_best_answer_users_by_topic_id($topic_id, $limit)
-	{
-		//临时添加
-		return false;
-		/*if ($helpful_users = AWS_APP::cache()->get('helpful_users_' . md5($topic_id . '_' . $limit)))
-		{
-			return $helpful_users;
-		}
-
-		if ($reputation_list = $this->fetch_all('reputation_topic', 'reputation > 0 AND topic_id = ' . intval($topic_id), 'reputation DESC', $limit))
-		{
-			foreach ($reputation_list AS $key => $val)
-			{
-				$best_answer_uids[] = $val['uid'];
-
-				$helpful_users[$val['uid']]['agree_count'] = $val['agree_count'];
-			}
-
-			$users_info = $this->model('account')->get_user_info_by_uids($best_answer_uids, true);
-
-			foreach ($users_info as $key => $val)
-			{
-				$helpful_users[$val['uid']]['user_info'] = $val;
-			}
-		}
-
-		AWS_APP::cache()->set('helpful_users_' . md5($topic_id . '_' . $limit), $helpful_users, get_setting('cache_level_normal'));
-
-		return $helpful_users;*/
-	}
-
-	public function get_helpful_users_by_topic_ids($topic_ids, $limit = 10, $experience_limit = 1)
-	{
-		//临时添加
-		return false;
-		/*if (!is_array($topic_ids))
-		{
-			return false;
-		}
-
-		array_walk_recursive($topic_ids, 'intval_string');
-
-		if ($helpful_users = AWS_APP::cache()->get('helpful_users_' . md5(implode('_', $topic_ids) . '_' . $limit . '_' . $experience_limit)))
-		{
-			return $helpful_users;
-		}
-
-		foreach ($topic_ids AS $topic_id)
-		{
-			if ($reputation_list = $this->fetch_all('reputation_topic', 'reputation > 0 AND topic_id = ' . intval($topic_id), 'reputation DESC', $limit))
-			{
-				foreach ($reputation_list AS $key => $val)
-				{
-					$best_answer_uids[$val['uid']] = $val['uid'];
-				}
-			}
-		}
-
-		if (!$best_answer_uids)
-		{
-			return false;
-		}
-
-		foreach ($best_answer_uids AS $best_answer_uid)
-		{
-			$rank_rate = $this->sum('reputation_topic', 'reputation', 'reputation > 0 AND topic_id IN(' . implode(',', $topic_ids) . ') AND uid = ' . intval($best_answer_uid));
-
-			$best_answer_user_ranks[] = array(
-				'rate' => $rank_rate,
-				'uid' => $best_answer_uid
-			);
-		}
-
-		$best_answer_user_ranks = aasort($best_answer_user_ranks, 'rate', 'DESC');
-
-		if (sizeof($best_answer_user_ranks) > $limit)
-		{
-			$best_answer_user_ranks = array_slice($best_answer_user_ranks, 0, $limit);
-		}
-
-		unset($best_answer_uids);
-
-		foreach ($best_answer_user_ranks AS $user_rank)
-		{
-			$best_answer_uids[$user_rank['uid']] = $user_rank['uid'];
-		}
-
-		$users_info = $this->model('account')->get_user_info_by_uids($best_answer_uids, true);
-
-		foreach ($best_answer_user_ranks AS $user_rank)
-		{
-			$helpful_users[$user_rank['uid']]['user_info'] = $users_info[$user_rank['uid']];
-
-			$experience = array();
-
-			foreach ($topic_ids AS $topic_id)
-			{
-				$topic_agree_count = $this->model('reputation')->calculate_agree_count($user_rank['uid'], array($topic_id));
-
-				$experience[] = array(
-					'topic_id' => $topic_id,
-					'agree_count' => $topic_agree_count
-				);
-			}
-
-			$experience = aasort($experience, 'agree_count', 'DESC');
-
-			if (sizeof($experience) > $experience_limit)
-			{
-				$experience = array_slice($experience, 0, $experience_limit);
-			}
-
-			foreach ($experience AS $key => $val)
-			{
-				$helpful_users[$user_rank['uid']]['experience'][] = array(
-					'topic_id' => $val['topic_id'],
-					'agree_count' => $val['agree_count']
-				);
-
-				$experience_topic_ids[$val['topic_id']] = $val['topic_id'];
-			}
-		}
-
-		$experience_topics_info = $this->model('topic')->get_topics_by_ids($experience_topic_ids);
-
-		if ($helpful_users)
-		{
-			foreach ($helpful_users AS $key => $val)
-			{
-				if (is_array($helpful_users[$key]['experience']))
-				{
-					foreach ($helpful_users[$key]['experience'] AS $exp_key => $exp_val)
-					{
-						$helpful_users[$key]['experience'][$exp_key]['topic_info'] = $experience_topics_info[$exp_val['topic_id']];
-					}
-				}
-			}
-		}
-
-		AWS_APP::cache()->set('helpful_users_' . md5(implode('_', $topic_ids) . '_' . $limit . '_' . $experience_limit), $helpful_users, get_setting('cache_level_low'));
-
-		return $helpful_users;*/
-	}
 
 	/**
 	 * 获取热门话题
@@ -746,24 +340,16 @@ class topic_class extends AWS_MODEL
 	 */
 	public function get_hot_topics($category_id = 0, $limit = 5, $section = null)
 	{
-		$where = array();
-
 		if ($category_id)
 		{
-			if ($questions = $this->query_all("SELECT question_id FROM " . get_table('question') . " WHERE category_id IN(" . implode(',', $this->model('system')->get_category_with_child_ids('question', $category_id)) . ') ORDER BY add_time DESC LIMIT 200'))
-			{
-				foreach ($questions AS $key => $val)
-				{
-					$question_ids[] = $val['question_id'];
-				}
-			}
+			$question_ids = $this->fetch_column('question', 'id', ['category_id', 'eq', $category_id, 'i'], 'add_time DESC', 200);
 
 			if (!$question_ids)
 			{
 				return false;
 			}
 
-			if (!$topic_relation = $this->fetch_all('topic_relation', 'item_id IN(' . implode(',', $question_ids) . ") AND `type` = 'question'"))
+			if (!$topic_relation = $this->fetch_all('topic_relation', [['item_id', 'in', $question_ids, 'i'], ['type', 'eq', 'question']]))
 			{
 				return false;
 			}
@@ -773,34 +359,32 @@ class topic_class extends AWS_MODEL
 				$topic_ids[] = $val['topic_id'];
 			}
 
-			$where[] = 'topic_id IN(' . implode(',', $topic_ids) . ')';
+			$where[] = ['topic_id', 'in', $topic_ids, 'i'];
 		}
 
 		switch ($section)
 		{
 			default:
-				return $this->fetch_all('topic', implode(' AND ', $where), 'discuss_count DESC', $limit);
+				return $this->fetch_all('topic', $where, 'discuss_count DESC', $limit);
 			break;
 
 			case 'week':
-				$where[] = 'discuss_count_update > ' . (time() - 604801);
+				$where[] = ['discuss_count_update', 'gt', time() - 604801];
 
-				return $this->fetch_all('topic', implode(' AND ', $where), 'discuss_count_last_week DESC', $limit);
+				return $this->fetch_all('topic', $where, 'discuss_count_last_week DESC', $limit);
 			break;
 
 			case 'month':
-				$where[] = 'discuss_count_update > ' . (time() - 2592001);
+				$where[] = ['discuss_count_update', 'gt', time() - 2592001];
 
-				return $this->fetch_all('topic', implode(' AND ', $where), 'discuss_count_last_month DESC', $limit);
+				return $this->fetch_all('topic', $where, 'discuss_count_last_month DESC', $limit);
 			break;
 		}
 	}
 
 	public function save_related_topic($topic_id, $related_id)
 	{
-		$this->pre_save_auto_related_topics($topic_id);
-
-		if (! $related_topic = $this->fetch_row('related_topic', 'topic_id = ' . intval($topic_id) . ' AND related_id = ' . intval($related_id)))
+		if (!$related_topic = $this->fetch_row('related_topic', [['topic_id', 'eq', $topic_id, 'i'], ['related_id', 'eq', $related_id, 'i']]))
 		{
 			return $this->insert('related_topic', array(
 				'topic_id' => intval($topic_id),
@@ -813,41 +397,12 @@ class topic_class extends AWS_MODEL
 
 	public function remove_related_topic($topic_id, $related_id)
 	{
-		$this->pre_save_auto_related_topics($topic_id);
-
-		return $this->delete('related_topic', 'topic_id = ' . intval($topic_id) . ' AND related_id = ' . intval($related_id));
-	}
-
-	public function pre_save_auto_related_topics($topic_id)
-	{
-		if (! $this->is_user_related($topic_id))
-		{
-			if ($auto_related_topics = $this->get_auto_related_topics($topic_id))
-			{
-				foreach ($auto_related_topics as $key => $val)
-				{
-					$this->insert('related_topic', array(
-						'topic_id' => intval($topic_id),
-						'related_id' => $val['topic_id']
-					));
-				}
-			}
-
-			$this->shutdown_update('topic', array(
-				'user_related' => 1
-			), 'topic_id = ' . intval($topic_id));
-		}
+		return $this->delete('related_topic', [['topic_id', 'eq', $topic_id, 'i'], ['related_id', 'eq', $related_id, 'i']]);
 	}
 
 	public function get_related_topics($topic_id)
 	{
-		if ($related_topic = $this->fetch_all('related_topic', 'topic_id = ' . intval($topic_id)))
-		{
-			foreach ($related_topic as $key => $val)
-			{
-				$topic_ids[] = $val['related_id'];
-			}
-		}
+		$topic_ids = $this->fetch_column('related_topic', 'related_id', ['topic_id', 'eq', $topic_id, 'i']);
 
 		if ($topic_ids)
 		{
@@ -855,408 +410,181 @@ class topic_class extends AWS_MODEL
 		}
 	}
 
-	public function get_auto_related_topics($topic_id)
+	public function get_topic_ids_by_item_id($item_id, $type)
 	{
-		if (! $question_ids = $this->get_item_ids_by_topics_id($topic_id, 'question', 10))
+		return $this->fetch_column('topic_relation', 'topic_id', [['item_id', 'eq', $item_id, 'i'], ['type', 'eq', $type, 's']]);
+	}
+
+
+	public function has_thread_topic($item_type, $item_id, $topic_id)
+	{
+		$where = [
+			['type', 'eq', $item_type, 's'],
+			['item_id', 'eq', $item_id, 'i'],
+			['topic_id', 'eq', $topic_id, 'i'],
+		];
+
+		return !!$this->fetch_one('topic_relation', 'id', $where);
+	}
+
+	public function add_thread_topic($item_type, $item_id, $topic_id, $log_uid)
+	{
+		if (!$this->model('content')->check_thread_type($item_type))
 		{
 			return false;
 		}
 
-		if ($question_ids)
+		if ($this->has_thread_topic($item_type, $item_id, $topic_id))
 		{
-			if ($topics = $this->model('question')->get_question_topic_by_questions($question_ids, 10))
-			{
-				foreach ($topics as $key => $val)
-				{
-					if ($val['topic_id'] == $topic_id)
-					{
-						unset($topics[$key]);
-					}
-				}
-
-				return $topics;
-			}
+			return;
 		}
-	}
-
-	public function related_topics($topic_id)
-	{
-		if ($this->is_user_related($topic_id))
-		{
-			$related_topic = $this->get_related_topics($topic_id);
-		}
-		else
-		{
-			$related_topic = $this->get_auto_related_topics($topic_id);
-		}
-
-		return $related_topic;
-	}
-
-	public function is_user_related($topic_id)
-	{
-		$topic = $this->get_topic_by_id($topic_id);
-
-		return $topic['user_related'];
-	}
-
-	public function get_topic_best_answer_action_list($topic_ids, $uid, $limit)
-	{
-		if (!is_digits($topic_ids))
-		{
-			return false;
-		}
-
-		$cache_key = 'topic_best_answer_action_list_' . md5($topic_ids . $limit);
-
-		if (!$result = AWS_APP::cache()->get($cache_key))
-		{
-			if ($topic_relation = $this->query_all("SELECT item_id FROM " . $this->get_table('topic_relation') . " WHERE topic_id IN (" . implode(',', explode(',', $topic_ids)) . ") AND `type` = 'question'"))
-			{
-				foreach ($topic_relation AS $key => $val)
-				{
-					$question_ids[$val['item_id']] = $val['item_id'];
-				}
-
-				unset($topic_relation);
-			}
-			else
-			{
-				return false;
-			}
-
-			if ($best_answers = $this->query_all("SELECT question_id, best_answer FROM " . $this->get_table('question') . " WHERE best_answer > 0 AND question_id IN (" . implode(',', $question_ids) . ") ORDER BY update_time DESC LIMIT " . $limit))
-			{
-				unset($question_ids);
-
-				foreach ($best_answers AS $key => $val)
-				{
-					$answer_ids[$val['best_answer']] = $val['best_answer'];
-					$question_ids[$val['question_id']] = $val['question_id'];
-				}
-			}
-			else
-			{
-				return false;
-			}
-
-			if ($questions_info = $this->model('question')->get_question_info_by_ids($question_ids))
-			{
-				foreach ($questions_info AS $key => $val)
-				{
-					$questions_info[$key]['associate_action'] = ACTION_LOG::ANSWER_QUESTION;
-
-					$action_list_uids[$val['published_uid']] = $val['published_uid'];
-				}
-			}
-
-			if ($answers_info = $this->model('answer')->get_answers_by_ids($answer_ids))
-			{
-				foreach ($answers_info AS $key => $val)
-				{
-					$action_list_uids[$val['uid']] = $val['uid'];
-				}
-			}
-
-			if ($action_list_uids)
-			{
-				$action_list_users_info = $this->model('account')->get_user_info_by_uids($action_list_uids);
-			}
-
-			foreach ($questions_info AS $key => $val)
-			{
-				$result[$key]['question_info'] = $val;
-				$result[$key]['user_info'] = $action_list_users_info[$answers_info[$val['best_answer']]['uid']];
-
-				$result[$key]['answer_info'] = $answers_info[$val['best_answer']];
-
-			}
-
-			AWS_APP::cache()->set($cache_key, $result, get_setting('cache_level_low'));
-		}
-
-		if ($uid)
-		{
-			foreach ($result AS $key => $val)
-			{
-				$question_ids[] = $val['question_info']['question_id'];
-
-				if ($val['question_info']['best_answer'])
-				{
-					$answer_ids[] = $val['question_info']['best_answer'];
-				}
-			}
-
-			$questions_focus = $this->model('question')->has_focus_questions($question_ids, $uid);
-			$answers_info_vote_values = $this->model('vote')->get_user_vote_values_by_ids('answer', $answer_ids, $uid);
-		}
-
-		foreach ($result AS $key => $val)
-		{
-			$result[$key]['question_info']['has_focus'] = $questions_focus[$val['question_info']['question_id']];
-			$result[$key]['answer_info']['vote_value'] = $answers_info_vote_values[$val['question_info']['best_answer']];
-
-			$result[$key]['title'] = $val['question_info']['question_content'];
-			$result[$key]['link'] = get_js_url('/question/' . $val['question_info']['question_id']);
-
-			$result[$key]['add_time'] = $result[$key]['answer_info']['add_time'];
-
-			$result[$key]['last_action_str'] = ACTION_LOG::format_action_data(ACTION_LOG::ANSWER_QUESTION, $result[$key]['answer_info']['uid'], $result[$key]['user_info']['user_name'], $result[$key]['question_info']);
-		}
-
-		return $result;
-	}
-
-	public function check_url_token($url_token, $topic_id)
-	{
-		return $this->count('topic', "url_token = '" . $this->quote($url_token) . "' OR topic_title = '" . $this->quote($url_token) . "' AND topic_id != " . intval($topic_id));
-	}
-
-	public function update_url_token($url_token, $topic_id)
-	{
-		return $this->update('topic', array(
-			'url_token' => htmlspecialchars($url_token)
-		), 'topic_id = ' . intval($topic_id));
-	}
-
-	public function update_seo_title($seo_title, $topic_id)
-	{
-		return $this->update('topic', array(
-			'seo_title' => htmlspecialchars($seo_title)
-		), 'topic_id = ' . intval($topic_id));
-	}
-
-	public function save_topic_relation($uid, $topic_id, $item_id, $type)
-	{
-		if (!$topic_id OR !$item_id OR !$type)
-		{
-			return false;
-		}
-
-		if (!$topic_info = $this->get_topic_by_id($topic_id))
-		{
-			return false;
-		}
-
-		if ($flag = $this->check_topic_relation($topic_id, $item_id, $type))
-		{
-			return $flag;
-		}
-
-		$this->model('account')->save_recent_topics($uid, $topic_info['topic_title']);
 
 		$insert_id = $this->insert('topic_relation', array(
-			'topic_id' => intval($topic_id),
+			'type' => $item_type,
 			'item_id' => intval($item_id),
+			'topic_id' => intval($topic_id),
 			'add_time' => fake_time(),
-			'uid' => intval($uid),
-			'type' => $type
 		));
 
-		$this->model('topic')->update_discuss_count($topic_id);
+		if ($insert_id)
+		{
+			$this->model('topic')->update_discuss_count($topic_id);
+			$this->model('content')->log($item_type, $item_id, $item_type, $item_id, '添加话题', $log_uid, 'topic', $topic_id);
+		}
 
 		return $insert_id;
 	}
 
-	public function check_topic_relation($topic_id, $item_id, $type)
+	public function remove_thread_topic($item_type, $item_id, $topic_id, $log_uid)
 	{
-		$where[] = 'topic_id = ' . intval($topic_id);
-		$where[] = "`type` = '" . $this->quote($type) . "'";
-
-		if ($item_id)
-		{
-			$where[] = 'item_id = ' . intval($item_id);
-		}
-
-		return $this->fetch_one('topic_relation', 'id', implode(' AND ', $where));
-	}
-
-	public function get_topics_by_item_id($item_id, $type)
-	{
-		$result = $this->get_topics_by_item_ids(array(
-			$item_id
-		), $type);
-
-		return $result[$item_id];
-	}
-
-	public function get_topics_by_item_ids($item_ids, $type)
-	{
-		if (!is_array($item_ids) OR sizeof($item_ids) == 0)
+		if (!$this->model('content')->check_thread_type($item_type))
 		{
 			return false;
 		}
 
-		array_walk_recursive($item_ids, 'intval_string');
-
-		if (!$item_topics = $this->fetch_all('topic_relation', "item_id IN(" . implode(',', $item_ids) . ") AND `type` = '" . $this->quote($type) . "'"))
+		if (!$this->has_thread_topic($item_type, $item_id, $topic_id))
 		{
-			foreach ($item_ids AS $item_id)
-			{
-				if (!$result[$item_id])
-				{
-					$result[$item_id] = array();
-				}
-			}
-
-			return $result;
+			return;
 		}
 
-		foreach ($item_topics AS $key => $val)
-		{
-			$topic_ids[] = $val['topic_id'];
-		}
+		$this->delete('topic_relation', [
+			['type', 'eq', $item_type, 's'],
+			['item_id', 'eq', $item_id, 'i'],
+			['topic_id', 'eq', $topic_id, 'i'],
+		]);
 
-		$topics_info = $this->model('topic')->get_topics_by_ids($topic_ids);
-
-		foreach ($item_topics AS $key => $val)
-		{
-			$result[$val['item_id']][] = $topics_info[$val['topic_id']];
-		}
-
-		foreach ($item_ids AS $item_id)
-		{
-			if (!$result[$item_id])
-			{
-				$result[$item_id] = array();
-			}
-		}
-
-		return $result;
+		$this->model('content')->log($item_type, $item_id, $item_type, $item_id, '移除话题', $log_uid, 'topic', $topic_id);
 	}
 
-	public function set_is_parent($topic_id, $is_parent)
+
+
+	// e.g. $id=12345, return '000/01/23/'
+    public function get_image_dir($id)
+    {
+        $id = abs(intval($id));
+        $id = sprintf('%\'09d', $id);
+        $dir1 = substr($id, 0, 3);
+        $dir2 = substr($id, 3, 2);
+        $dir3 = substr($id, 5, 2);
+
+        return $dir1 . '/' . $dir2 . '/' . $dir3 . '/';
+    }
+
+	// e.g. $id=12345, return '45_topic_min.jpg'
+    public function get_image_filename($id, $size = 'min')
+    {
+        $id = abs(intval($id));
+        $id = sprintf('%\'09d', $id);
+
+        return substr($id, -2) . '_topic_' . $size . '.jpg';
+    }
+
+	// e.g. $id=12345, return '000/01/23/45_topic_min.jpg'
+    public function get_image_path($id, $size = 'min')
+    {
+        $id = abs(intval($id));
+        $id = sprintf('%\'09d', $id);
+        $dir1 = substr($id, 0, 3);
+        $dir2 = substr($id, 3, 2);
+        $dir3 = substr($id, 5, 2);
+
+        return $dir1 . '/' . $dir2 . '/' . $dir3 . '/' . substr($id, -2) . '_topic_' . $size . '.jpg';
+    }
+
+
+	public function upload_image($field, $id, &$error)
 	{
-		if (!$topic_id)
+		$id = intval($id);
+		if ($id <= 0)
 		{
 			return false;
 		}
 
-		$to_update_topic['is_parent'] = intval($is_parent);
+		$local_upload_dir = S::get('upload_dir');
+		$save_dir = $local_upload_dir . '/topic/' . $this->get_image_dir($id);
+		$filename = $this->get_image_filename($id, 'real');
 
-		if ($to_update_topic['is_parent'] != 0)
+		AWS_APP::upload()->initialize(array(
+			'allowed_types' => S::get('allowed_upload_types'),
+			'upload_path' => $save_dir,
+			'is_image' => TRUE,
+			'max_size' => S::get('upload_size_limit'),
+			'file_name' => $filename,
+			'encrypt_name' => FALSE
+		))->do_upload($field);
+
+		if (AWS_APP::upload()->get_error())
 		{
-			$to_update_topic['parent_id'] = 0;
+			switch (AWS_APP::upload()->get_error())
+			{
+				case 'upload_invalid_filetype':
+					$error = _t('文件类型无效');
+					return false;
+
+				case 'upload_invalid_filesize':
+					$error = _t('文件尺寸过大, 最大允许尺寸为 %s KB', S::get('upload_size_limit'));
+					return false;
+
+				default:
+					$error = _t('错误代码: %s', AWS_APP::upload()->get_error());
+					return false;
+			}
 		}
 
-		if (is_array($topic_id))
+		if (! $upload_data = AWS_APP::upload()->data())
 		{
-			array_walk_recursive($topic_id, 'intval_string');
-
-			$where = 'topic_id IN (' . implode(',', $topic_id) . ')';
-		}
-		else
-		{
-			$where = 'topic_id = ' . intval($topic_id);
-		}
-
-		return $this->update('topic', $to_update_topic, $where);
-	}
-
-	public function set_parent_id($topic_id, $parent_id)
-	{
-		if (is_array($topic_id))
-		{
-			array_walk_recursive($topic_id, 'intval_string');
-
-			$where = 'topic_id IN (' . implode(',', $topic_id) . ')';
-		}
-		else
-		{
-			$where = 'topic_id = ' . intval($topic_id);
-		}
-
-		return $this->update('topic', array('parent_id' => intval($parent_id)), $where);
-	}
-
-	public function get_parent_topics()
-	{
-		$parent_topic_list_query = $this->fetch_all('topic', 'is_parent = 1', 'topic_title ASC');
-
-		if (!$parent_topic_list_query)
-		{
+			$error = _t('上传失败');
 			return false;
 		}
 
-		foreach ($parent_topic_list_query AS $parent_topic_info)
+		if ($upload_data['is_image'] != 1)
 		{
-			if (!$parent_topic_info['url_token'])
-			{
-				$parent_topic_info['url_token'] = urlencode($parent_topic_info['topic_title']);
-			}
-
-			$parent_topic_list[$parent_topic_info['topic_id']] = $parent_topic_info;
-		}
-
-		return $parent_topic_list;
-	}
-
-	public function get_child_topic_ids($topic_id)
-	{
-		if ($child_topics = $this->query_all("SELECT topic_id FROM " . get_table('topic') . " WHERE parent_id = " . intval($topic_id)))
-		{
-			foreach ($child_topics AS $key => $val)
-			{
-				$child_topic_ids[] = $val['topic_id'];
-			}
-		}
-
-		return $child_topic_ids;
-	}
-
-	public function get_related_topic_ids_by_id($topic_id)
-	{
-		if (!$topic_info = $this->model('topic')->get_topic_by_id($topic_id))
-		{
+			$error = _t('文件类型错误');
 			return false;
 		}
 
-		if ($topic_info['merged_id'] AND $topic_info['merged_id'] != $topic_info['topic_id'])
+		foreach(AWS_APP::config()->get('image')->topic_thumbnail AS $key => $val)
 		{
-			$merged_topic_info = $this->model('topic')->get_topic_by_id($topic_info['merged_id']);
+			$result = AWS_APP::image()->initialize(array(
+				'local_upload_dir' => $local_upload_dir,
+				'quality' => 90,
+				'source_image' => $save_dir . $filename,
+				'new_image' => $save_dir . $this->get_image_filename($id, $key),
+				'width' => $val['w'],
+				'height' => $val['h']
+			))->resize();
 
-			if ($merged_topic_info)
+			if ($result == false)
 			{
-				$topic_info = $merged_topic_info;
+				$error = _t('保存失败');
+				return false;
 			}
 		}
 
-		$related_topics_ids = array();
+		$this->update_topic(null, $id, null, null, random_string(4)); // 生成随机字符串
 
-		$related_topics = $this->model('topic')->related_topics($topic_info['topic_id']);
-
-		if ($related_topics)
-		{
-			foreach ($related_topics AS $related_topic)
-			{
-				$related_topics_ids[$related_topic['topic_id']] = $related_topic['topic_id'];
-			}
-		}
-
-		$child_topic_ids = $this->model('topic')->get_child_topic_ids($topic_info['topic_id']);
-
-		if ($child_topic_ids)
-		{
-			foreach ($child_topic_ids AS $topic_id)
-			{
-				$related_topics_ids[$topic_id] = $topic_id;
-			}
-		}
-
-		$contents_topic_id = $topic_info['topic_id'];
-
-		$merged_topics = $this->model('topic')->get_merged_topic_ids($topic_info['topic_id']);
-
-		if ($merged_topics)
-		{
-			foreach ($merged_topics AS $merged_topic)
-			{
-				$merged_topic_ids[] = $merged_topic['source_id'];
-			}
-
-			$contents_topic_id .= ',' . implode(',', $merged_topic_ids);
-		}
-
-		return array_merge($related_topics_ids, explode(',', $contents_topic_id));
+		return true;
 	}
+
+
 }

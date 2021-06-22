@@ -28,7 +28,7 @@ class setting_class extends AWS_MODEL
 			{
 				if ($val['value'])
 				{
-					$val['value'] = unserialize($val['value']);
+					$val['value'] = unserialize($val['value'], array('allowed_classes' => false));
 				}
 
 				$settings[$val['varname']] = $val['value'];
@@ -54,7 +54,7 @@ class setting_class extends AWS_MODEL
                 continue;
             }
 
-            $where = "varname = '" . $this->quote($key) . "'";
+            $where = ['varname', 'eq', $key];
             if (!$this->count('system_setting', $where))
             {
                 $this->insert('system_setting', array(

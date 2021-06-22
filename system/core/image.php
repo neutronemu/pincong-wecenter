@@ -12,17 +12,17 @@
 +---------------------------------------------------------------------------
 */
 
-define(IMAGE_CORE_OP_TO_FILE, 1);              // Output to file
-define(IMAGE_CORE_OP_OUTPUT, 2);               // Output to browser
+define('IMAGE_CORE_OP_TO_FILE', 1);              // Output to file
+define('IMAGE_CORE_OP_OUTPUT', 2);               // Output to browser
 
-define(IMAGE_CORE_SC_NOT_KEEP_SCALE, 4);       // Free scale
-define(IMAGE_CORE_SC_BEST_RESIZE_WIDTH, 8);    // Scale to width
-define(IMAGE_CORE_SC_BEST_RESIZE_HEIGHT, 16);  // Scale to height
+define('IMAGE_CORE_SC_NOT_KEEP_SCALE', 4);       // Free scale
+define('IMAGE_CORE_SC_BEST_RESIZE_WIDTH', 8);    // Scale to width
+define('IMAGE_CORE_SC_BEST_RESIZE_HEIGHT', 16);  // Scale to height
 
-define(IMAGE_CORE_CM_DEFAULT, 0);               // Clipping method: default
-define(IMAGE_CORE_CM_LEFT_OR_TOP, 1);           // Clipping method: left or top
-define(IMAGE_CORE_CM_MIDDLE, 2);                // Clipping method: middle
-define(IMAGE_CORE_CM_RIGHT_OR_BOTTOM, 3);       // Clipping method: right or bottom
+define('IMAGE_CORE_CM_DEFAULT', 0);               // Clipping method: default
+define('IMAGE_CORE_CM_LEFT_OR_TOP', 1);           // Clipping method: left or top
+define('IMAGE_CORE_CM_MIDDLE', 2);                // Clipping method: middle
+define('IMAGE_CORE_CM_RIGHT_OR_BOTTOM', 3);       // Clipping method: right or bottom
 
 class core_image
 {
@@ -33,6 +33,7 @@ class core_image
 	var $width;
 	var $height;
 	var $quality = 90;
+	var $local_upload_dir = '';
 
 	var $option = IMAGE_CORE_OP_TO_FILE;
 
@@ -63,12 +64,9 @@ class core_image
 
 	public function initialize($config = array())
 	{
-		if (!defined('IN_SAE'))
+		if (class_exists('Imagick', false))
 		{
-			if (class_exists('Imagick', false))
-			{
-				$this->image_library = 'imagemagick';
-			}
+			$this->image_library = 'imagemagick';
 		}
 
 		if (sizeof($config) > 0)
@@ -122,6 +120,8 @@ class core_image
 
 	private function imageProcessImageMagick()
 	{
+		$result = true;
+
 		$this->source_image_w = $this->image_info[0];
 		$this->source_image_h = $this->image_info[1];
 
@@ -205,7 +205,18 @@ class core_image
 
 		if ($this->option == IMAGE_CORE_OP_TO_FILE AND $this->new_image)
 		{
-			file_put_contents($this->new_image, $im->getimageblob());
+			if (Services_RemoteStorage::is_enabled())
+			{
+				$content = $im->getimageblob();
+				if (!$this->saveToRemoteStorage($this->new_image, $content))
+				{
+					$result = false;
+				}
+			}
+			else
+			{
+				file_put_contents($this->new_image, $im->getimageblob());
+			}
 		}
 		else if ($this->option == IMAGE_CORE_OP_OUTPUT)
 		{
@@ -217,11 +228,13 @@ class core_image
 			die;
 		}
 
-		return TRUE;
+		return $result;
 	}
 
 	private function imageProcessGD()
 	{
+		$result = true;
+
 		$func_output = 'image' . $this->image_type[$this->image_type_index[$this->image_ext]];
 
 		if (!function_exists($func_output))
@@ -357,49 +370,51 @@ class core_image
 
 		if ($this->option == IMAGE_CORE_OP_TO_FILE AND $this->new_image)
 		{
-			if (file_exists($this->new_image))
-			{
-				@unlink($this->new_image);
-			}
-
-			if (defined('IN_SAE'))
-			{
-				$this->new_image = str_replace(get_setting('upload_dir'), '', $this->new_image);
-
-				$sae_storage = new SaeStorage();
-			}
-
 			switch ($this->image_type_index[$this->image_ext])
 			{
-				case 1:
-				case 3:
-					if (defined('IN_SAE'))
+				case 1:	// GIF
+				case 3:	// PNG
+					if (Services_RemoteStorage::is_enabled())
 					{
 						ob_start();
-
 						$func_output($dst_img);
-						$sae_storage->write('uploads', $this->new_image, ob_get_contents());
-
+						$content = ob_get_contents();
 						ob_end_clean();
+
+						if (!$this->saveToRemoteStorage($this->new_image, $content))
+						{
+							$result = false;
+						}
 					}
 					else
 					{
+						if (file_exists($this->new_image))
+						{
+							@unlink($this->new_image);
+						}
 						$func_output($dst_img, $this->new_image);
 					}
 				break;
 
 				case 2:	// JPEG
-					if (defined('IN_SAE'))
+					if (Services_RemoteStorage::is_enabled())
 					{
 						ob_start();
-
 						$func_output($dst_img, null, $this->quality);
-						$sae_storage->write('uploads', $this->new_image, ob_get_contents());
-
+						$content = ob_get_contents();
 						ob_end_clean();
+
+						if (!$this->saveToRemoteStorage($this->new_image, $content))
+						{
+							$result = false;
+						}
 					}
 					else
 					{
+						if (file_exists($this->new_image))
+						{
+							@unlink($this->new_image);
+						}
 						$func_output($dst_img, $this->new_image, $this->quality);
 					}
 				break;
@@ -432,6 +447,18 @@ class core_image
 		@imagedestroy($im);
 		@imagedestroy($dst_img);
 
-		return TRUE;
+		return $result;
 	}
+
+	private function saveToRemoteStorage($path, $content)
+	{
+		$path = str_replace($this->local_upload_dir, '', $path);
+		$response = Services_RemoteStorage::put($path, $content);
+		if (!$response OR $response['status_code'] != 200)
+		{
+			return false;
+		}
+		return true;
+	}
+
 }

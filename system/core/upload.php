@@ -638,18 +638,23 @@ class core_upload {
      */
     public function is_allowed_filetype($ignore_mime = FALSE)
     {
+        $ext = strtolower(ltrim($this->file_ext, '.'));
+
+        if ($ext == 'php')
+        {
+            return FALSE;
+        }
+
         if ($this->allowed_types == '*')
         {
             return TRUE;
         }
 
-        if (count($this->allowed_types) == 0 OR ! is_array($this->allowed_types))
+        if (! is_array($this->allowed_types) OR count($this->allowed_types) == 0)
         {
             $this->set_error('upload_no_file_types');
             return FALSE;
         }
-
-        $ext = strtolower(ltrim($this->file_ext, '.'));
 
         if ( ! in_array($ext, $this->allowed_types))
         {
@@ -746,7 +751,6 @@ class core_upload {
             $this->upload_path = str_replace("\\", "/", realpath($this->upload_path));
         }
 
-        if (!defined('IN_SAE'))
         {
             if ( ! is_dir($this->upload_path))
             {

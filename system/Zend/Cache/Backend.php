@@ -76,7 +76,7 @@ class Zend_Cache_Backend
     public function setDirectives($directives)
     {
         if (!is_array($directives)) Zend_Cache::throwException('Directives parameter must be an array');
-        while (list($name, $value) = each($directives)) {
+        foreach ($directives as $name => $value) {
             if (!is_string($name)) {
                 Zend_Cache::throwException("Incorrect option name : $name");
             }
@@ -255,9 +255,9 @@ class Zend_Cache_Backend
         }
 
         // Create a default logger to the standard output stream
-        //require_once 'Zend/Log.php';
-        //require_once 'Zend/Log/Writer/Stream.php';
-        //require_once 'Zend/Log/Filter/Priority.php';
+        require_once 'Zend/Log.php';
+        require_once 'Zend/Log/Writer/Stream.php';
+        require_once 'Zend/Log/Filter/Priority.php';
         $logger = new Zend_Log(new Zend_Log_Writer_Stream('php://output'));
         $logger->addFilter(new Zend_Log_Filter_Priority(Zend_Log::WARN, '<='));
         $this->_directives['logger'] = $logger;

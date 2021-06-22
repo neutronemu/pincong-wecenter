@@ -1,0 +1,31 @@
+<!DOCTYPE HTML>
+<html>
+
+<head>
+<meta charset="utf-8" />
+<meta name="renderer" content="webkit" />
+<meta http-equiv="X-UA-Compatible" content="IE=edge" />
+<meta name="referrer" content="no-referrer" />
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1" />
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="blank" />
+<meta name="format-detection" content="telephone=no" />
+<title><?php echo $this->page_title; ?></title>
+<base href="<?php echo url_rewrite('/'); ?>" />
+
+<link rel="stylesheet" href="<?php echo G_STATIC_URL; ?>/css/bootstrap.css" />
+<link rel="stylesheet" href="<?php echo G_STATIC_URL; ?>/css/icon.css" />
+<link rel="stylesheet" href="<?php echo G_STATIC_URL; ?>/admin/css/common.css?v=<?php echo G_DISPLAY_VERSION_BUILD; ?>" />
+
+<script type="text/javascript">
+var G_BASE_URL = "<?php echo url_rewrite(); ?>";
+var G_STATIC_URL = "<?php echo G_STATIC_URL; ?>";
+</script>
+
+<script src="<?php echo G_STATIC_URL; ?>/libs/jquery/3.6.0/jquery.min.js"></script>
+<script src="<?php echo G_STATIC_URL; ?>/js/bootstrap.js"></script>
+<script src="<?php echo G_STATIC_URL; ?>/js/hogan.js"></script>
+<script src="<?php echo G_STATIC_URL; ?>/js/aws_legacy.js?v=<?php echo G_DISPLAY_VERSION_BUILD; ?>"></script>
+<script src="<?php echo G_STATIC_URL; ?>/admin/js/framework.js"></script>
+<script src="<?php echo G_STATIC_URL; ?>/admin/js/global.js?v=<?php echo G_DISPLAY_VERSION_BUILD; ?>"></script>
+</head>

@@ -26,8 +26,10 @@ class article extends AWS_ADMIN_CONTROLLER
 
 	public function list_action()
 	{
-		if ($this->is_post())
+		if (H::is_post())
 		{
+			$param = array();
+
 			foreach ($_POST as $key => $val)
 			{
 				if ($key == 'start_date' OR $key == 'end_date')
@@ -37,55 +39,53 @@ class article extends AWS_ADMIN_CONTROLLER
 
 				if ($key == 'keyword' OR $key == 'user_name')
 				{
-					$val = rawurlencode($val);
+					$val = safe_url_encode($val);
 				}
 
 				$param[] = $key . '-' . $val;
 			}
 
-			H::ajax_json_output(AWS_APP::RSM(array(
-				'url' => get_js_url('/admin/article/list/' . implode('__', $param))
-			), 1, null));
+			H::ajax_location(url_rewrite('/admin/article/list/' . implode('__', $param)));
 		}
 
 
 		$where = array();
 
-		if ($_GET['keyword'])
+		if (H::GET('keyword'))
 		{
-			$where[] = "(`title` LIKE '%" . $this->model('article')->quote($_GET['keyword']) . "%')";
+			$where[] = ['title', 'like', '%' . escape_like_clause(htmlspecialchars(H::GET('keyword'))) . '%', 's'];
 		}
 
-		if ($_GET['start_date'])
+		if (H::GET('start_date'))
 		{
-			$where[] = 'add_time >= ' . strtotime(base64_decode($_GET['start_date']));
+			$where[] = ['add_time', 'gte', strtotime(base64_decode(H::GET('start_date')))];
 		}
 
-		if ($_GET['end_date'])
+		if (H::GET('end_date'))
 		{
-			$where[] = 'add_time <= ' . strtotime('+1 day', strtotime(base64_decode($_GET['end_date'])));
+			$where[] = ['add_time', 'lte', strtotime('+1 day', strtotime(base64_decode(H::GET('end_date'))))];
 		}
 
-		if ($_GET['user_name'])
+		if (H::GET('user_name'))
 		{
-			$user_info = $this->model('account')->get_user_info_by_username($_GET['user_name']);
+			$user_info = $this->model('account')->get_user_info_by_username(H::GET('user_name'));
 
-			$where[] = 'uid = ' . intval($user_info['uid']);
+			$where[] = ['uid', 'eq', $user_info['uid'], 'i'];
 		}
 
-		if ($_GET['comment_count_min'])
+		if (H::GET('comment_count_min'))
 		{
-			$where[] = 'comments >= ' . intval($_GET['comment_count_min']);
+			$where[] = ['reply_count', 'gte', H::GET('comment_count_min'), 'i'];
 		}
 
-		if ($_GET['answer_count_max'])
+		if (H::GET('answer_count_max'))
 		{
-			$where[] = 'comments <= ' . intval($_GET['comment_count_max']);
+			$where[] = ['reply_count', 'lte', H::GET('comment_count_max'), 'i'];
 		}
 
-		if ($article_list = $this->model('article')->fetch_page('article', implode(' AND ', $where), 'id DESC', $_GET['page'], $this->per_page))
+		if ($article_list = $this->model('article')->fetch_page('article', $where, 'id DESC', H::GET('page'), $this->per_page))
 		{
-			$search_articles_total = $this->model('article')->found_rows();
+			$search_articles_total = $this->model('article')->total_rows();
 		}
 
 		if ($article_list)
@@ -112,17 +112,17 @@ class article extends AWS_ADMIN_CONTROLLER
 		{
 			if (!in_array($key, array('app', 'c', 'act', 'page')))
 			{
-				$url_param[] = $key . '-' . $val;
+				$url_param[] = htmlspecialchars($key) . '-' . htmlspecialchars($val);
 			}
 		}
 
-		TPL::assign('pagination', AWS_APP::pagination()->initialize(array(
-			'base_url' => get_js_url('/admin/article/list/') . implode('__', $url_param),
+		TPL::assign('pagination', AWS_APP::pagination()->create(array(
+			'base_url' => url_rewrite('/admin/article/list/') . implode('__', $url_param),
 			'total_rows' => $search_articles_total,
 			'per_page' => $this->per_page
-		))->create_links());
+		)));
 
-		$this->crumb(AWS_APP::lang()->_t('文章管理'), 'admin/article/list/');
+		$this->crumb(_t('文章管理'));
 
 		TPL::assign('articles_count', $search_articles_total);
 		TPL::assign('list', $article_list);

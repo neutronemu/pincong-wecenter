@@ -20,231 +20,6 @@ if (!defined('IN_ANWSION'))
 
 class system_class extends AWS_MODEL
 {
-	public function fetch_category_data($type, $parent_id = 0, $order = 'sort ASC,id ASC')
-	{
-		static $category_list_all;
-
-		if (!$category_list_all[$type])
-		{
-			if ($type)
-			{
-				$category_list_all_query = $this->fetch_all('category', '`type` = \'' . $this->quote($type) . '\'', $order);
-			}
-			else
-			{
-				$category_list_all_query = $this->fetch_all('category', '', $order);
-			}
-
-			if ($category_list_all_query)
-			{
-				foreach ($category_list_all_query AS $key => $val)
-				{
-					$category_list_all[$type][$val['parent_id']][] = $val;
-				}
-			}
-		}
-
-		if (!$category_all = $category_list_all[$type][$parent_id])
-		{
-			return array();
-		}
-
-		return $category_all;
-	}
-
-	/* 获取分类数组 */
-	public function fetch_category($type, $parent_id = 0)
-	{
-		$category_list = array();
-
-		if (!$category_all = $this->fetch_category_data($type, $parent_id))
-		{
-			return $category_list;
-		}
-
-		foreach ($category_all AS $key => $val)
-		{
-			if (!$val['icon'])
-			{
-				$val['icon'] = G_STATIC_URL . '/css/default/img/default_class_imgs.png';
-			}
-			else
-			{
-				$val['icon'] = get_setting('upload_url') . '/category/' . $val['icon'];
-			}
-
-			$category_list[$val['id']] = array(
-				'id' => $val['id'],
-				'title' => $val['title'],
-				'icon' => $val['icon'],
-				'description' => $val['description'],
-				'parent_id' => $val['parent_id'],
-				'sort' => $val['sort'],
-				'url_token' => $val['url_token']
-			);
-
-			if ($child_list = $this->fetch_category($type, $val['id']))
-			{
-				$category_list[$val['id']]['child'] = $child_list;
-			}
-		}
-
-		return $category_list;
-	}
-
-	/* 获取分类 HTML 数据 */
-	public function build_category_html($type, $parent_id = 0, $selected_id = 0, $prefix = '', $child = true)
-	{
-		if (!$category_list = $this->fetch_category($type, $parent_id))
-		{
-			return false;
-		}
-
-		if ($prefix)
-		{
-			$_prefix = $prefix . ' ';
-		}
-
-		foreach ($category_list AS $category_id => $val)
-		{
-			if ($selected_id == $val['id'])
-			{
-				$html .= '<option value="' . $category_id . '" selected="selected">' . $_prefix . $val['title'] . '</option>';
-			}
-			else
-			{
-				$html .= '<option value="' . $category_id . '">' . $_prefix . $val['title'] . '</option>';
-			}
-
-			if ($child AND $val['child'])
-			{
-				$html .= $this->build_category_html($type, $val['id'], $selected_id, $prefix . '--');
-			}
-			else
-			{
-				unset($prefix);
-			}
-		}
-
-		return $html;
-	}
-
-	/* 获取分类 JSON 数据 */
-	public function build_category_json($type, $parent_id = 0, $prefix = '')
-	{
-		if (!$category_list = $this->fetch_category($type, $parent_id))
-		{
-			return false;
-		}
-
-		if ($prefix)
-		{
-			$_prefix = $prefix . ' ';
-		}
-
-		foreach ($category_list AS $category_id => $val)
-		{
-			$data[] = array(
-				'id' => $category_id,
-				'title' => $_prefix . $val['title'],
-				'description' => $val['description'],
-				'sort' => $val['sort'],
-				'parent_id' => $val['parent_id'],
-				'url_token' => $val['url_token']
-			);
-
-			if ($val['child'])
-			{
-				$data = array_merge($data, json_decode($this->build_category_json($type, $val['id'], $prefix . '--'), true));
-			}
-			else
-			{
-				unset($prefix);
-			}
-		}
-
-		return json_encode($data);
-	}
-
-	/* 获取数组信息 */
-	public function get_category_info($category_id)
-	{
-		static $all_category;
-
-		if (!$all_category)
-		{
-			if ($all_category_query = $this->fetch_all('category'))
-			{
-				foreach ($all_category_query AS $key => $val)
-				{
-					if (!$val['url_token'])
-					{
-						$val['url_token'] = $val['id'];
-					}
-
-					$all_category[$val['id']] = $val;
-				}
-			}
-		}
-
-		return $all_category[$category_id];
-	}
-
-	/* 获取数组信息 */
-	public function get_category_info_by_url_token($url_token)
-	{
-		static $all_category;
-
-		if (!$all_category)
-		{
-			if ($all_category_query = $this->fetch_all('category'))
-			{
-				foreach ($all_category_query AS $key => $val)
-				{
-					if (!$val['url_token'])
-					{
-						$val['url_token'] = $val['id'];
-					}
-
-					$all_category[$val['url_token']] = $val;
-				}
-			}
-		}
-
-		return $all_category[$url_token];
-	}
-
-	public function get_category_list($type)
-	{
-		$category_list = array();
-
-		$category_all = $this->fetch_all('category', '`type` = \'' . $this->quote($type) . '\'', 'id ASC');
-
-		foreach($category_all as $key => $val)
-		{
-			if (!$val['url_token'])
-			{
-				$val['url_token'] = $val['id'];
-			}
-
-			$category_list[$val['id']] = $val;
-		}
-
-		return $category_list;
-	}
-
-	public function get_category_with_child_ids($type, $category_id)
-	{
-		$category_ids[] = intval($category_id);
-
-		if ($child_ids = $this->fetch_category_data($type, $category_id))
-		{
-			$category_ids = array_merge($category_ids, fetch_array_value($child_ids, 'id'));
-		}
-
-		return $category_ids;
-	}
-
 	public function check_stop_keyword($keyword)
 	{
 		$keyword = trim($keyword);
@@ -254,7 +29,7 @@ class system_class extends AWS_MODEL
 			return false;
 		}
 
-		if (cjk_strlen($keyword) == 1)
+		if (iconv_strlen($keyword) == 1)
 		{
 			return false;
 		}
@@ -424,126 +199,6 @@ class system_class extends AWS_MODEL
 		return $result;
 	}
 
-	public function update_associate_fresh_action($page, $limit = 100)
-	{
-		if (!$action_history_data = $this->fetch_page('user_action_history', null, 'history_id ASC', $page, $limit))
-		{
-			return false;
-		}
-
-		foreach ($action_history_data AS $key => $val)
-		{
-			if ($val['fold_status'] == 0)
-			{
-				ACTION_LOG::associate_fresh_action($val['history_id'], $val['associate_id'], $val['associate_type'], $val['associate_action'], $val['uid'], $val['anonymous'], $val['add_time']);
-			}
-		}
-
-		return true;
-	}
-
-	public function clean_session()
-	{
-		return $this->delete('sessions', '`modified` < ' . (time() - 3600));
-	}
-
-	public function remove_user_by_uid($uid, $remove_user_data = false)
-	{
-		$delete_tables = array(
-			'favorite',
-			'currency_log',
-			'question_focus',
-			'topic_focus',
-			'users_attrib',
-			'users'
-		);
-
-		$update_tables = array(
-			'redirect',
-			'topic_merge',
-			'topic_relation'
-		);
-
-		if ($remove_user_data)
-		{
-			if ($user_answers = $this->query_all("SELECT answer_id FROM " . get_table('answer') . " WHERE uid = " . intval($uid)))
-			{
-				foreach ($user_answers AS $key => $val)
-				{
-					$answer_ids[] = $val['answer_id'];
-				}
-			}
-
-			if ($user_articles = $this->query_all("SELECT id FROM " . get_table('article') . " WHERE uid = " . intval($uid)))
-			{
-				foreach ($user_articles AS $key => $val)
-				{
-					$this->model('article')->remove_article($val['id']);
-				}
-			}
-
-			if ($user_questions = $this->query_all("SELECT question_id FROM " . get_table('question') . " WHERE published_uid = " . intval($uid)))
-			{
-				foreach ($user_questions AS $key => $val)
-				{
-					$this->model('question')->remove_question($val['question_id']);
-				}
-			}
-
-			$update_tables[] = 'answer';
-			$update_tables[] = 'article';
-
-			$delete_tables[] = 'answer_comments';
-			$delete_tables[] = 'article_comment';
-			$delete_tables[] = 'question_comments';
-
-			if ($inbox_dialog = $this->fetch_all('inbox_dialog', 'recipient_uid = ' . intval($uid) . ' OR sender_uid = ' . intval($uid)))
-			{
-				foreach ($inbox_dialog AS $key => $val)
-				{
-					$this->delete('inbox', 'dialog_id = ' . $val['id']);
-					$this->delete('inbox_dialog', 'id = ' . $val['id']);
-				}
-			}
-		}
-		else
-		{
-			$update_tables[] = 'answer';
-			$update_tables[] = 'answer_comments';
-			$update_tables[] = 'article';
-			$update_tables[] = 'article_comment';
-			$update_tables[] = 'question_comments';
-			$delete_tables[] = 'inbox';
-
-			$this->update('question', array(
-				'published_uid' => '-1'
-			), 'published_uid = ' . intval($uid));
-		}
-
-		foreach ($delete_tables AS $key => $table)
-		{
-			$this->delete($table, 'uid = ' . intval($uid));
-		}
-
-		foreach ($update_tables AS $key => $table)
-		{
-			$this->update($table, array(
-				'uid' => '-1'
-			), 'uid = ' . intval($uid));
-		}
-
-		$this->model('verify')->remove_apply($uid);
-		$this->model('notify')->delete_notify('sender_uid = ' . intval($uid) . ' OR recipient_uid = ' . intval($uid));
-
-		$this->delete('question_invite', 'sender_uid = ' . intval($uid) . ' OR recipients_uid = ' . intval($uid));
-
-		ACTION_LOG::delete_action_history('uid = ' . intval($uid));
-
-		$this->delete('user_follow', 'fans_uid = ' . intval($uid) . ' OR friend_uid = ' . intval($uid));
-
-		return true;
-	}
-
 	public function statistic($tag, $start_time = null, $end_time = null)
 	{
 		if (!$start_time)
@@ -561,31 +216,23 @@ class system_class extends AWS_MODEL
 		switch ($tag)
 		{
 			case 'new_user':
-				$query = "SELECT COUNT(uid) AS count, FROM_UNIXTIME(reg_time, '%y-%m') AS statistic_date FROM " . get_table('users') . " WHERE reg_time BETWEEN " . intval($start_time) . " AND " . intval($end_time) . " GROUP BY statistic_date ASC";
+				$query = "SELECT COUNT(uid) AS count, FROM_UNIXTIME(reg_time, '%y-%m') AS statistic_date FROM " . $this->get_table('users') . " WHERE reg_time BETWEEN " . intval($start_time) . " AND " . intval($end_time) . " GROUP BY statistic_date ASC";
 			break;
 
 			case 'new_question':
-				$query = "SELECT COUNT(question_id) AS count, FROM_UNIXTIME(add_time, '%y-%m') AS statistic_date FROM " . get_table('question') . " WHERE add_time BETWEEN " . intval($start_time) . " AND " . intval($end_time) . " GROUP BY statistic_date ASC";
+				$query = "SELECT COUNT(id) AS count, FROM_UNIXTIME(add_time, '%y-%m') AS statistic_date FROM " . $this->get_table('question') . " WHERE add_time BETWEEN " . intval($start_time) . " AND " . intval($end_time) . " GROUP BY statistic_date ASC";
 			break;
 
 			case 'new_answer':
-				$query = "SELECT COUNT(answer_id) AS count, FROM_UNIXTIME(add_time, '%y-%m') AS statistic_date FROM " . get_table('answer') . " WHERE add_time BETWEEN " . intval($start_time) . " AND " . intval($end_time) . " GROUP BY statistic_date ASC";
+				$query = "SELECT COUNT(id) AS count, FROM_UNIXTIME(add_time, '%y-%m') AS statistic_date FROM " . $this->get_table('question_reply') . " WHERE add_time BETWEEN " . intval($start_time) . " AND " . intval($end_time) . " GROUP BY statistic_date ASC";
 			break;
 
 			case 'new_topic':
-				$query = "SELECT COUNT(topic_id) AS count, FROM_UNIXTIME(add_time, '%y-%m') AS statistic_date FROM " . get_table('topic') . " WHERE add_time BETWEEN " . intval($start_time) . " AND " . intval($end_time) . " GROUP BY statistic_date ASC";
+				$query = "SELECT COUNT(topic_id) AS count, FROM_UNIXTIME(add_time, '%y-%m') AS statistic_date FROM " . $this->get_table('topic') . " WHERE add_time BETWEEN " . intval($start_time) . " AND " . intval($end_time) . " GROUP BY statistic_date ASC";
 			break;
 
 			case 'new_answer_vote':
-				$query = "SELECT COUNT(id) AS count, FROM_UNIXTIME(add_time, '%y-%m') AS statistic_date FROM " . get_table('vote') . " WHERE add_time BETWEEN " . intval($start_time) . " AND " . intval($end_time) . " GROUP BY statistic_date ASC";
-			break;
-
-			case 'new_favorite_item':
-				$query = "SELECT COUNT(id) AS count, FROM_UNIXTIME(time, '%y-%m') AS statistic_date FROM " . get_table('favorite') . " WHERE time BETWEEN " . intval($start_time) . " AND " . intval($end_time) . " GROUP BY statistic_date ASC";
-			break;
-
-			case 'new_question_redirect':
-				$query = "SELECT COUNT(id) AS count, FROM_UNIXTIME(time, '%y-%m') AS statistic_date FROM " . get_table('redirect') . " WHERE time BETWEEN " . intval($start_time) . " AND " . intval($end_time) . " GROUP BY statistic_date ASC";
+				$query = "SELECT COUNT(id) AS count, FROM_UNIXTIME(add_time, '%y-%m') AS statistic_date FROM " . $this->get_table('vote') . " WHERE add_time BETWEEN " . intval($start_time) . " AND " . intval($end_time) . " GROUP BY statistic_date ASC";
 			break;
 		}
 

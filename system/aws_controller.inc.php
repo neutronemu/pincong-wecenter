@@ -28,105 +28,38 @@ class AWS_CONTROLLER
 
 	public function __construct($process_setup = true)
 	{
-		// 从 Session 中获取当前用户 User ID
-		$this->user_id = AWS_APP::user()->get_info('uid');
-
-		$this->user_info = $this->model('account')->get_user_info_by_uid($this->user_id, TRUE);
-
-		if ($this->user_info)
+		if (AWS_APP::auth()->authenticate($this->user_info))
 		{
-			$user_group = $this->model('account')->get_user_group(
-				$this->user_info['group_id'],
-				$this->model('reputation')->get_reputation_group_id_by_reputation($this->user_info['reputation'])
-			);
+			$this->user_id = $this->user_info['uid'];
+
+			if ($this->user_info['forbidden'])
+			{
+				$this->model('login')->logout();
+				H::redirect_msg(_t('抱歉, 你的账号已经被禁止登录'), '/');
+			}
+
+			$user_settings = unserialize_array($this->user_info['settings']);
+			$this->user_info['default_timezone'] = $user_settings['timezone'] ?? null;
 
 			if ($this->user_info['default_timezone'])
 			{
 				date_default_timezone_set($this->user_info['default_timezone']);
 			}
-
-			// 如果上次登录时间早于24小时, 则更新登录时间
-			// TODO: 在管理后台添加选项
-			$time_before = real_time() - (24 * 3600);
-			if ($this->user_info['last_login'] < $time_before)
-			{
-				$this->model('account')->update_user_last_login($this->user_info['uid']);
-			}
-
-		}
-		else if ($this->user_id)
-		{
-			$this->model('account')->logout();
 		}
 		else
 		{
-			$user_group = $this->model('account')->get_user_group_by_id(99);
-
-			if ($_GET['fromuid'])
-			{
-				HTTP::set_cookie('fromuid', $_GET['fromuid']);
-			}
+			// 游客权限
+			$user_group = $this->model('usergroup')->get_user_group_by_id(-1);
+			$this->user_info['permission'] = $user_group['permission'];
 		}
 
-		$this->user_info['group_name'] = $user_group['group_name'];
-		$this->user_info['permission'] = $user_group['permission'];
+		UF::set_permissions($this->user_info['permission']);
 
-		AWS_APP::session()->permission = $this->user_info['permission'];
-
-		if ($this->user_info['forbidden'])
-		{
-			$this->model('account')->logout();
-
-			H::redirect_msg(AWS_APP::lang()->_t('抱歉, 你的账号已经被禁止登录'), '/');
-		}
-		else
-		{
-			TPL::assign('user_id', $this->user_id);
-			TPL::assign('user_info', $this->user_info);
-		}
-
-		// 引入系统 CSS 文件
-		TPL::import_css(array(
-			'css/common.css',
-			'css/link.css',
-			'js/plug_module/style.css',
-		));
-
-		if (defined('SYSTEM_LANG'))
-		{
-			TPL::import_js(base_url() . '/language/' . SYSTEM_LANG . '.js');
-		}
-
-		if (HTTP::is_browser('ie', 8))
-		{
-			TPL::import_js(array(
-				'js/jquery.js',
-				'js/respond.js'
-			));
-		}
-		else
-		{
-			TPL::import_js('js/jquery.2.js');
-		}
-
-		// 引入系统 JS 文件
-		TPL::import_js(array(
-			'js/jquery.form.js',
-			'js/plug_module/plug-in_module.js',
-			'js/aws.js',
-			'js/aw_template.js',
-			'js/app.js',
-		));
+		TPL::assign('user_id', $this->user_id);
+		TPL::assign('user_info', $this->user_info);
 
 		// 产生面包屑导航数据
-		$this->crumb(get_setting('site_name'), base_url());
-
-		if (get_setting('site_close') == 'Y' AND $this->user_info['group_id'] != 1 AND !in_array($_GET['app'], array('admin', 'account', 'upgrade')))
-		{
-			$this->model('account')->logout();
-
-			H::redirect_msg(get_setting('close_notice'), '/account/login/');
-		}
+		$this->crumb(S::get('site_name'));
 
 		// 执行控制器 Setup 动作
 		if ($process_setup)
@@ -144,23 +77,6 @@ class AWS_CONTROLLER
 	 */
 	public function setup() {}
 
-	/**
-	 * 判断当前访问类型是否为 POST
-	 *
-	 * 调用 $_SERVER['REQUEST_METHOD']
-	 *
-	 * @access	public
-	 * @return	boolean
-	 */
-	public function is_post()
-	{
-		if ($_SERVER['REQUEST_METHOD'] == 'POST')
-		{
-			return TRUE;
-		}
-
-		return FALSE;
-	}
 
 	/**
 	 * 调用系统 Model
@@ -183,44 +99,15 @@ class AWS_CONTROLLER
 	 *
 	 * @access	public
 	 * @param	string
-	 * @param	string
 	 */
-	public function crumb($name, $url = null)
+	public function crumb($name)
 	{
-		if (is_array($name))
+		$this->crumbs[] = htmlspecialchars_decode($name);
+
+		$title = '';
+		foreach ($this->crumbs as $key => $crumb)
 		{
-			foreach ($name as $key => $value)
-			{
-				$this->crumb($key, $value);
-			}
-
-			return $this;
-		}
-
-		$name = htmlspecialchars_decode($name);
-
-		$crumb_template = $this->crumb;
-
-		if (strlen($url) > 1 and substr($url, 0, 1) == '/')
-		{
-			$url = base_url() . substr($url, 1);
-		}
-
-		$this->crumb[] = array(
-			'name' => $name,
-			'url' => $url
-		);
-
-		$crumb_template['last'] = array(
-			'name' => $name,
-			'url' => $url
-		);
-
-		TPL::assign('crumb', $crumb_template);
-
-		foreach ($this->crumb as $key => $crumb)
-		{
-			$title = $crumb['name'] . ' - ' . $title;
+			$title = $crumb . ' - ' . $title;
 		}
 
 		TPL::assign('page_title', htmlspecialchars(rtrim($title, ' - ')));
@@ -240,7 +127,7 @@ class AWS_CONTROLLER
  */
 class AWS_ADMIN_CONTROLLER extends AWS_CONTROLLER
 {
-	public $per_page = 20;
+	public $per_page;
 
 	public function __construct()
 	{
@@ -251,33 +138,19 @@ class AWS_ADMIN_CONTROLLER extends AWS_CONTROLLER
 			return false;
 		}
 
-		TPL::import_clean();
+		$this->per_page = S::get_int('contents_per_page');
 
-		if (defined('SYSTEM_LANG'))
+		if (!$this->user_info['permission']['is_administrator'])
 		{
-			TPL::import_js(base_url() . '/language/' . SYSTEM_LANG . '.js');
+			if ($_POST['_post_type'] == 'ajax')
+			{
+				H::ajax_error((_t('你没有访问权限, 请重新登录')));
+			}
+			else
+			{
+				H::redirect('/');
+			}
 		}
-
-		if (HTTP::is_browser('ie', 8))
-		{
-			TPL::import_js('js/jquery.js');
-		}
-		else
-		{
-			TPL::import_js('js/jquery.2.js');
-		}
-
-		TPL::import_js(array(
-			'admin/js/aws_admin.js',
-			'admin/js/aws_admin_template.js',
-			'js/jquery.form.js',
-			'admin/js/framework.js',
-			'admin/js/global.js',
-		));
-
-		TPL::import_css(array(
-			'admin/css/common.css'
-		));
 
 		if (in_array($_GET['act'], array(
 			'login',
@@ -287,33 +160,15 @@ class AWS_ADMIN_CONTROLLER extends AWS_CONTROLLER
 			return true;
 		}
 
-		$admin_info = json_decode(AWS_APP::crypt()->decode(AWS_APP::session()->admin_login), true);
-
-		if ($admin_info['uid'])
-		{
-			if ($admin_info['uid'] != $this->user_id OR !AWS_APP::session()->permission['is_administrator'])
-			{
-				unset(AWS_APP::session()->admin_login);
-
-				if ($_POST['_post_type'] == 'ajax')
-				{
-					H::ajax_json_output(AWS_APP::RSM(null, -1, AWS_APP::lang()->_t('会话超时, 请重新登录')));
-				}
-				else
-				{
-					H::redirect_msg(AWS_APP::lang()->_t('会话超时, 请重新登录'), '/admin/login/url-' . base64_current_path());
-				}
-			}
-		}
-		else
+		if (!AWS_APP::auth()->is_admin())
 		{
 			if ($_POST['_post_type'] == 'ajax')
 			{
-				H::ajax_json_output(AWS_APP::RSM(null, -1, AWS_APP::lang()->_t('会话超时, 请重新登录')));
+				H::ajax_error((_t('会话超时, 请重新登录')));
 			}
 			else
 			{
-				HTTP::redirect('/admin/login/url-' . base64_current_path());
+				H::redirect('/admin/login/');
 			}
 		}
 

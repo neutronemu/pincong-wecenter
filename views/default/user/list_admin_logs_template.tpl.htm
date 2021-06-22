@@ -1,0 +1,101 @@
+<?php if ($this->list) { ?>
+<?php foreach($this->list AS $key => $val) { ?>
+<li>
+	<p class="aw-small-text">
+		<span class="aw-color-000"><?php
+			switch ($val['type'])
+			{
+				case 'flag_user':
+				{
+					switch ($val['status'])
+					{
+						case 0:
+							echo _t('取消标记');
+							break;
+						default:
+							echo _t('标记 (%s)', get_user_group_name_flagged($val['status']));
+							break;
+					}
+					break;
+				}
+				case 'forbid_user':
+				{
+					switch ($val['status'])
+					{
+						case 0:
+							echo _t('取消封禁');
+							break;
+						case 1:
+							echo _t('禁止登录');
+							break;
+						case 2:
+							echo _t('禁止登录 + 隐藏全部发言');
+							break;
+						case 3:
+							echo _t('禁止登录 + 替换全部发言');
+							break;
+					}
+					break;
+				}
+				case 'change_group':
+				{
+					echo _t('变更用户组');
+					break;
+				}
+				case 'edit_title':
+				{
+					echo _t('修改头衔');
+					break;
+				}
+				case 'edit_signature':
+				{
+					echo _t('修改签名');
+					break;
+				}
+				case 'add_blocked':
+				{
+					echo _t('加入屏蔽列表');
+					break;
+				}
+				case 'delete_user':
+				{
+					echo _t('刪除');
+					break;
+				}
+			}
+		?></span>
+		•
+		<?php echo date_friendly($val['add_time']); ?>
+		<br>
+		<span class="aw-color-666"><?php echo _t('管理员'); ?>:</span>
+		<a href="<?php echo UF::url($val['admin_user_info']); ?>">
+		<?php if ($val['admin_user_info']['forbidden']) { ?>
+			<s><?php echo UF::name($val['admin_user_info']); ?></s>
+		<?php } else { ?>
+			<?php echo UF::name($val['admin_user_info']); ?>
+		<?php } ?>
+		</a>
+		<?php if ($val['admin_user_info']['flagged']) { ?><sup><?php echo UF::flagged($val['admin_user_info']); ?></sup><?php } ?>
+		(<i class="icon icon-prestige"></i><?php echo UF::reputation($val['admin_user_info']); ?>
+		<i class="icon icon-agree"></i><?php echo $val['admin_user_info']['agree_count']; ?>)
+		<br>
+		<span class="aw-color-666"><?php echo _t('用户'); ?>:</span>
+		<a href="<?php echo UF::url($val['user_info']); ?>">
+		<?php if ($val['user_info']['forbidden']) { ?>
+			<s><?php echo UF::name($val['user_info']); ?></s>
+		<?php } else { ?>
+			<?php echo UF::name($val['user_info']); ?>
+		<?php } ?>
+		</a>
+		<?php if ($val['user_info']['flagged']) { ?><sup><?php echo UF::flagged($val['user_info']); ?></sup><?php } ?>
+		(<i class="icon icon-prestige"></i><?php echo UF::reputation($val['user_info']); ?>
+		<i class="icon icon-agree"></i><?php echo $val['user_info']['agree_count']; ?>)
+		<?php if($val['detail']) { ?>
+		<br>
+		<span class="aw-color-666"><?php echo _t('详情'); ?>: </span>
+		<?php echo FORMAT::text($val['detail']); ?>
+		<?php } ?>
+	</p>
+</li>
+<?php } ?>
+<?php } ?>

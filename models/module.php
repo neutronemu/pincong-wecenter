@@ -22,28 +22,28 @@ class module_class extends AWS_MODEL
 {
 	public function recommend_users_topics($uid)
 	{
-		if (!$recommend_users = $this->model('account')->get_user_recommend_v2($uid, 20))
+		if (!$recommend_users = $this->recommend_users($uid, 20))
 		{
 			return false;
 		}
 
-		if (! $recommend_topics = $this->model('topic')->get_user_recommend_v2($uid, 20))
+		if (! $recommend_topics = $this->recommend_topics($uid, 20))
 		{
-			return array_slice($recommend_users, 0, get_setting('recommend_users_number'));
+			return array_slice($recommend_users, 0, S::get('recommend_users_number'));
 		}
 
 		if ($recommend_topics)
 		{
 			shuffle($recommend_topics);
 
-			$recommend_topics = array_slice($recommend_topics, 0, intval(get_setting('recommend_users_number') / 2));
+			$recommend_topics = array_slice($recommend_topics, 0, S::get_int('recommend_users_number') / 2);
 		}
 
 		if ($recommend_users)
 		{
 			shuffle($recommend_users);
 
-			$recommend_users = array_slice($recommend_users, 0, (get_setting('recommend_users_number') - count($recommend_topics)));
+			$recommend_users = array_slice($recommend_users, 0, (S::get('recommend_users_number') - count($recommend_topics)));
 		}
 
 		if (! is_array($recommend_users))
@@ -56,25 +56,11 @@ class module_class extends AWS_MODEL
 
 	public function sidebar_hot_topics($category_id = 0)
 	{
-		return $this->model('topic')->get_hot_topics($category_id, 5, 'week');
-	}
-
-	public function sidebar_hot_users($uid = 0, $limit = 5)
-	{
-		if ($users_list = $this->fetch_all('users', 'uid <> ' . intval($uid) . ' AND last_login > ' . (time() - (60 * 60 * 24 * 7)), 'RAND()', ($limit * 4)))
+		$num = S::get_int('recommend_users_number');
+		if ($num)
 		{
-			foreach($users_list as $key => $val)
-			{
-				if (!$val['url_token'])
-				{
-					$users_list[$key]['url_token'] = urlencode($val['user_name']);
-				}
-			}
+			return $this->model('topic')->get_hot_topics($category_id, $num, 'week');
 		}
-
-		shuffle($users_list);
-
-		return array_slice($users_list, 0, $limit);
 	}
 
 }

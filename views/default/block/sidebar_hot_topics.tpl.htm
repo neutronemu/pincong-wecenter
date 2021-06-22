@@ -1,22 +1,22 @@
 <div class="aw-mod aw-text-align-justify">
 	<div class="mod-head">
-		<a href="topic/channel-hot" class="pull-right"><?php _e('更多'); ?> &gt;</a>
-		<h3><?php _e('热门话题'); ?></h3>
+		<a href="<?php echo url_rewrite(); ?>/topic/channel-hot" class="pull-right"><?php echo _t('更多'); ?> &gt;</a>
+		<h3><?php echo _t('热门话题'); ?></h3>
 	</div>
 	<div class="mod-body">
 		<?php if (is_array($this->sidebar_hot_topics)) { ?>
-		<?php foreach($this->sidebar_hot_topics AS $key => $val) {?>
+		<?php foreach($this->sidebar_hot_topics AS $key => $val) { ?>
 			<dl>
 				<dt class="pull-left aw-border-radius-5">
-					<a href="topic/<?php echo $val['topic_title'];?>"><img alt="" src="<?php echo get_topic_pic_url('mid', $val['topic_pic']); ?>" /></a>
+					<a href="<?php echo url_rewrite(); ?>/topic/<?php echo FORMAT::text($val['topic_title']); ?>"><img alt="" src="<?php echo get_topic_pic_url($val, 'mid'); ?>" /></a>
 				</dt>
 				<dd class="pull-left">
 					<p class="clearfix">
 						<span class="topic-tag">
-							<a href="topic/<?php echo $val['topic_title'];?>" class="text" data-id="<?php echo $val['topic_id']; ?>"><?php echo $val['topic_title'];?></a>
+							<a href="<?php echo url_rewrite(); ?>/topic/<?php echo FORMAT::text($val['topic_title']); ?>" class="text" data-id="<?php echo $val['topic_id']; ?>"><?php echo FORMAT::text($val['topic_title']); ?></a>
 						</span>
 					</p>
-					<p><?php _e('%s 个问题', '<b>' . $val['discuss_count'] . '</b>'); ?>, <?php _e('%s 人关注', '<b>' . $val['focus_count'] . '</b>'); ?></p>
+					<p><?php echo _t('%s 个问题', '<b>' . $val['discuss_count'] . '</b>'); ?>, <?php echo _t('%s 人关注', '<b>' . $val['focus_count'] . '</b>'); ?></p>
 				</dd>
 			</dl>
 		<?php } ?>

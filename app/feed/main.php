@@ -21,10 +21,16 @@ if (!defined('IN_ANWSION'))
 class main extends AWS_CONTROLLER
 {
 
-	function get_access_rule()
+	public function get_access_rule()
 	{
-		$rule_action['rule_type'] = 'black';
-		$rule_action['actions'] = array();
+		$rule_action['rule_type'] = 'white';
+
+		if ($this->user_info['permission']['visit_site'])
+		{
+			$rule_action['actions'] = array(
+				'index'
+			);
+		}
 
 		return $rule_action;
 	}
@@ -38,7 +44,7 @@ class main extends AWS_CONTROLLER
 
 	public function index_action()
 	{
-		TPL::assign('list', $this->model('posts')->get_posts_list('question', 1, 20, 'new', explode(',', $_GET['topic']), $_GET['category']));
+		TPL::assign('list', $this->model('posts')->get_posts_list('question', 1, 20, null, H::GET('category')));
 
 		TPL::output('global/feed');
 	}

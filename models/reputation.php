@@ -20,138 +20,312 @@ if (!defined('IN_ANWSION'))
 
 class reputation_class extends AWS_MODEL
 {
-	public function get_reputation_group_list()
+	private function should_user_be_flagged($recipient_user, $content_reputation, $agree_value)
 	{
-		static $reputation_groups;
-
-		if (!$reputation_groups)
+		if (!$recipient_user OR !!$recipient_user['forbidden'])
 		{
-			if ($groups = $this->fetch_all('users_group', 'type = 1'))
+			return null;
+		}
+
+		if ($agree_value > 0)
+		{
+			$reputation = $recipient_user['permission']['flagging_reputation_gt'];
+			$group_id = $recipient_user['permission']['flagging_reputation_gt_group_id'];
+			if (is_numeric($reputation) AND is_numeric($group_id))
 			{
-				foreach ($groups as $key => $val)
+				if ($content_reputation > $reputation)
 				{
-					$reputation_groups[$val['group_id']] = $val;
+					return $this->model('usergroup')->get_group_id_by_value_flagged($group_id);
+				}
+			}
+		}
+		else
+		{
+			$reputation = $recipient_user['permission']['flagging_reputation_lt'];
+			$group_id = $recipient_user['permission']['flagging_reputation_lt_group_id'];
+			if (is_numeric($reputation) AND is_numeric($group_id))
+			{
+				if ($content_reputation < $reputation)
+				{
+					return $this->model('usergroup')->get_group_id_by_value_flagged($group_id);
 				}
 			}
 		}
 
-		return $reputation_groups;
+		return null;
 	}
 
-	// 通过威望值得到威望组ID
-	public function get_reputation_group_id_by_reputation($reputation)
+	private function check_reputation_type($item_type)
 	{
-		if ($reputation_groups = $this->get_reputation_group_list())
+		$reputation_types = S::get('reputation_types');
+		if (!$reputation_types)
 		{
-			foreach ($reputation_groups as $key => $val)
-			{
-				if ((intval($reputation) >= intval($val['reputation_lower'])) AND (intval($reputation) < intval($val['reputation_higer'])))
-				{
-					return intval($val['group_id']);
-				}
-			}
+			return true;
 		}
-		return 0;
-	}
-
-	// 通过威望值得到威望系数
-	public function get_reputation_factor_by_reputation($reputation)
-	{
-		if ($reputation_groups = $this->get_reputation_group_list())
-		{
-			foreach ($reputation_groups as $key => $val)
-			{
-				if ((intval($reputation) >= intval($val['reputation_lower'])) AND (intval($reputation) < intval($val['reputation_higer'])))
-				{
-					return intval($val['reputation_factor']);
-				}
-			}
-		}
-		return 0;
-	}
-
-	// 增加用户赞同数和威望
-	public function increase_agree_count_and_reputation($uid, $vote, $reputation_factor)
-	{
-		$uid = intval($uid);
-		if (!$uid OR $uid == -1)
+		$reputation_types = explode(',', $reputation_types);
+		if (!is_array($reputation_types))
 		{
 			return false;
 		}
-
-		$user_info = $this->model('account')->get_user_info_by_uid($uid);
-		if (!$user_info)
+		$reputation_types = array_map('trim', $reputation_types);
+		if (!in_array($item_type, $reputation_types))
 		{
 			return false;
 		}
-
-		$agree_count_delta = intval($vote);
-		$reputation_delta = $agree_count_delta * intval($reputation_factor);
-
-		$this->query('UPDATE ' . $this->get_table('users') . ' SET agree_count = agree_count + ' . $agree_count_delta . ', reputation = reputation + ' . $reputation_delta . ' WHERE uid = ' . ($uid));
-
-		// 如果是普通会员则落实自动封禁功能
-		if ($user_info['group_id'] == 4)
-		{
-			$agree_count = $user_info['agree_count'] + $agree_count_delta;
-			$reputation = $user_info['reputation'] + $reputation_delta;
-			$this->auto_forbid_user($uid, $user_info['forbidden'], $agree_count, $reputation);
-		}
-
 		return true;
 	}
 
-	// 如果满足封禁条件则自动封禁
-	public function auto_forbid_user($uid, $forbidden, $agree_count, $reputation)
+	// 更新被赞用户赞数和声望
+	private function update_recipient_user_info($item_type, $recipient_user, $agree_value, $reputation_value, $flag_group_id = null)
 	{
-		// 自动封禁/解封, $forbidden == 2 表示已被系统自动封禁
-		if (!$forbidden OR $forbidden == 2)
+		// 用户已注销
+		if (!$recipient_user)
 		{
-			$auto_banning_agree_count = get_setting('auto_banning_agree_count');
-			$auto_banning_reputation = get_setting('auto_banning_reputation');
+			return;
+		}
 
-			if (get_setting('auto_banning_type') == 'AND')
+		if ($agree_value > 0)
+		{
+			// 被标记的用户不增加声望
+			// reputation_types以外post不增加声望
+			if ($recipient_user['permission']['no_reputation_upvote'] OR !$this->check_reputation_type($item_type))
 			{
-				if ( (is_numeric($auto_banning_agree_count) AND $auto_banning_agree_count >= $agree_count)
-					AND (is_numeric($auto_banning_reputation) AND $auto_banning_reputation >= $reputation) )
-				{
-					if (!$forbidden) // 满足封禁条件且未被封禁的用户
-					{
-						$fields = array('forbidden' => 2);
-					}
-				}
-				else
-				{
-					if ($forbidden == 2) // 不满足封禁条件已被封禁的用户
-					{
-						$fields = array('forbidden' => 0);
-					}
-				}
+				$reputation_value = 0;
+			}
+		}
+		else
+		{
+			if ($recipient_user['permission']['no_reputation_downvote'])
+			{
+				$reputation_value = 0;
+			}
+		}
+
+		$set = '`agree_count` = `agree_count` + ' . ($agree_value) . ', `reputation` = `reputation` + ' . ($reputation_value);
+		if (!is_null($flag_group_id))
+		{
+			$set .= ', `flagged` = ' . $flag_group_id;
+		}
+
+		$this->update('users', $set, ['uid', 'eq', $recipient_user['uid'], 'i']);
+	}
+
+	// 更新被赞post赞数和声望(热度)
+	private function update_item_agree_count_and_reputation($item_type, $item_id, $agree_value, $reputation_value)
+	{
+		$this->update(
+			$item_type,
+			'`agree_count` = `agree_count` + ' . $agree_value . ', `reputation` = `reputation` + ' . $reputation_value,
+			['id', 'eq', $item_id]
+		);
+	}
+
+	// 更新posts_index表声望(用于热门排序)
+	private function update_index_reputation($item_type, $item_id, $item_info, $reputation_value)
+	{
+		switch ($item_type)
+		{
+			case 'question_reply':
+				$parent_type = 'question';
+				break;
+
+			case 'article_reply':
+				$parent_type = 'article';
+				break;
+
+			case 'video_reply':
+				$parent_type = 'video';
+				break;
+
+			default:
+				return;
+		}
+
+		$this->update('posts_index', '`reputation` = `reputation` + ' . $reputation_value, [['post_id', 'eq', $item_info['parent_id'], 'i'], ['post_type', 'eq', $parent_type]]);
+	}
+
+
+	// 根据post字数获得额外奖励声望
+	private function get_bonus_factor($item_info)
+	{
+		$bonus_factor = S::get('bonus_factor');
+		if (!is_numeric($bonus_factor))
+		{
+			return 1;
+		}
+
+		$bonus_max_count = S::get_int('bonus_max_count');
+		$bonus_min_count = S::get_int('bonus_min_count');
+
+		$message = $item_info['message'];
+		if (!$message)
+		{
+			return 1;
+		}
+
+		$message = preg_replace('/\[quote\](.*?)\[\/quote\]/is', '', $message);
+		$message = preg_replace('/\[(.*?)\]/is', '', $message);
+
+		// 字数 = 字节数 / 3
+		$word_count = intval(strlen($message) / 3);
+
+		// factor设定
+		if ($word_count > $bonus_min_count)
+		{
+			$sigmoid = 1 / (1 + exp(-6 * (($word_count - $bonus_min_count) / $bonus_max_count - 0.5)));
+			if ($word_count < ($bonus_max_count / 2))
+			{
+				return $bonus_factor / 4 * (1 + $sigmoid);
 			}
 			else
 			{
-				if ( (is_numeric($auto_banning_agree_count) AND $auto_banning_agree_count >= $agree_count)
-					OR (is_numeric($auto_banning_reputation) AND $auto_banning_reputation >= $reputation) )
+				return $bonus_factor / 2 * (1 + $sigmoid);
+			}
+		}
+		return 1;
+	}
+
+	// 根据一星期点赞次数计算动态声望
+	private function get_dynamic_factor($uid, $agree_value)
+	{
+		// 1赞同 -1反对
+		if ($agree_value > 0)
+		{
+			$arg = S::get('reputation_dynamic_weight_agree');
+		}
+		else
+		{
+			$arg = S::get('reputation_dynamic_weight_disagree');
+		}
+
+		if (is_numeric($arg))
+		{
+			$total = $this->model('vote')->get_user_vote_count($uid, 7, $agree_value);
+
+			if ($total > 0)
+			{
+				return exp(-($arg) * $total);
+			}
+		}
+		return 1;
+	}
+
+
+	private function update_item_and_user_info($item_type, $item_id, $vote_user, $recipient_user, $agree_value, $user_reputation_value, $content_reputation_value)
+	{
+		$flag_group_id = null;
+
+		if ($user_reputation_value OR $content_reputation_value)
+		{
+			// 已缓存过
+			$item_info = $this->model('content')->get_thread_or_reply_info_by_id($item_type, $item_id);
+
+			if (!$vote_user['permission']['no_dynamic_reputation_factor'])
+			{
+				if ($user_reputation_value)
 				{
-					if (!$forbidden) // 满足封禁条件且未被封禁的用户
-					{
-						$fields = array('forbidden' => 2);
-					}
+					$factor = $this->get_dynamic_factor($vote_user['uid'], $agree_value);
+					$user_reputation_value = $user_reputation_value * $factor;
 				}
-				else
+			}
+			if (!$vote_user['permission']['no_bonus_reputation_factor'])
+			{
+				$factor = $this->get_bonus_factor($item_info);
+				$user_reputation_value = $user_reputation_value * $factor;
+				$content_reputation_value = $content_reputation_value * $factor;
+			}
+
+			if (is_infinite($user_reputation_value))
+			{
+				$user_reputation_value = 0;
+			}
+			if (is_infinite($content_reputation_value))
+			{
+				$content_reputation_value = 0;
+			}
+			$user_reputation_value = round($user_reputation_value, 6);
+			$content_reputation_value = round($content_reputation_value, 6);
+
+			if ($content_reputation_value)
+			{
+				$content_reputation_now = $item_info['reputation'] + $content_reputation_value;
+				if ($agree_value > 0)
 				{
-					if ($forbidden == 2) // 不满足封禁条件已被封禁的用户
-					{
-						$fields = array('forbidden' => 0);
-					}
+					$this->model('activity')->push_item_with_high_reputation($item_type, $item_id, $content_reputation_now, $item_info['uid']);
 				}
+
+				$flag_group_id = $this->should_user_be_flagged($recipient_user, $content_reputation_now, $agree_value);
+
+				$this->update_index_reputation($item_type, $item_id, $item_info, $content_reputation_value);
 			}
 		}
 
-		if ($fields)
+		$this->update_item_agree_count_and_reputation($item_type, $item_id, $agree_value, $content_reputation_value);
+		$this->update_recipient_user_info($item_type, $recipient_user, $agree_value, $user_reputation_value, $flag_group_id);
+	}
+
+
+	private function get_initial_reputation($vote_user, $recipient_user, $agree_value, &$result_user_reputation, &$result_content_reputation)
+	{
+		if (!!$recipient_user AND is_numeric($recipient_user['reputation_factor_receive']))
 		{
-			$this->update('users', $fields, 'uid = ' . intval($uid));
+			$user_reputation_factor = $recipient_user['reputation_factor_receive'];
 		}
+		else
+		{
+			$user_reputation_factor = $vote_user['reputation_factor'];
+		}
+
+		if ($agree_value > 0 AND $vote_user['permission']['no_upvote_reputation_factor'])
+		{
+			$user_reputation_factor = 0;
+		}
+		else if ($agree_value < 0 AND $vote_user['permission']['no_downvote_reputation_factor'])
+		{
+			$user_reputation_factor = 0;
+		}
+
+		if (is_numeric($vote_user['content_reputation_factor']))
+		{
+			$content_reputation_factor = $vote_user['content_reputation_factor'];
+		}
+		else
+		{
+			$content_reputation_factor = $user_reputation_factor;
+		}
+
+		$result_user_reputation = $agree_value * $user_reputation_factor;
+		$result_content_reputation = $agree_value * $content_reputation_factor;
+	}
+
+
+	public function apply($item_type, $item_id, $uid, $item_uid, $agree_value, $update_agree_count_only = false)
+	{
+		if ($agree_value > 0)
+		{
+			$agree_value = 1;
+		}
+		else
+		{
+			$agree_value = -1;
+		}
+
+		// 已缓存过
+		$vote_user = $this->model('account')->get_user_and_group_info_by_uid($uid);
+
+		$recipient_user = $this->model('account')->get_user_and_group_info_by_uid($item_uid);
+
+		if ($update_agree_count_only)
+		{
+			$user_reputation_value = 0;
+			$content_reputation_value = 0;
+		}
+		else
+		{
+			$this->get_initial_reputation($vote_user, $recipient_user, $agree_value, $user_reputation_value, $content_reputation_value);
+		}
+
+		$this->update_item_and_user_info($item_type, $item_id, $vote_user, $recipient_user, $agree_value, $user_reputation_value, $content_reputation_value);
 	}
 
 }

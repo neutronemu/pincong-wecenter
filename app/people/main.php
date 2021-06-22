@@ -22,161 +22,176 @@ class main extends AWS_CONTROLLER
 {
 	public function get_access_rule()
 	{
+		$rule_action['rule_type'] = 'white';
+
 		if ($this->user_info['permission']['visit_people'] AND $this->user_info['permission']['visit_site'])
 		{
-			$rule_action['rule_type'] = 'black';
-		}
-		else
-		{
-			$rule_action['rule_type'] = 'white';
+			$rule_action['actions'] = array(
+				'index'
+			);
 		}
 
 		return $rule_action;
 	}
 
-	public function index_action()
+	private function index_square()
 	{
-		if (isset($_GET['notification_id']))
+		$this->crumb(_t('用户列表'));
+
+		$is_admin = $this->user_info['permission']['is_administrator'];
+		$is_mod = $this->user_info['permission']['is_moderator'];
+
+		$all_groups = $this->model('usergroup')->get_all_groups();
+		foreach ($all_groups as $key => $val)
 		{
-			$this->model('notify')->read_notification($_GET['notification_id'], $this->user_id);
+			if ($val['type'] == 2)
+			{
+				$custom_group[] = $val;
+			}
+
+			if ($is_admin AND $val['type'] == 0 AND $val['group_id'] > 0)
+			{
+				$custom_group[] = $val;
+			}
 		}
 
-		if (is_digits($_GET['id']))
+		$url_param = [];
+
+		if (H::GET('sort') == 'ASC')
 		{
-			if (!$user = $this->model('account')->get_user_info_by_uid($_GET['id'], TRUE))
+			$sort = 'ASC';
+			$url_param[] = 'sort-' . $sort;
+		}
+		else
+		{
+			$sort = 'DESC';
+		}
+
+		$sort_key = H::GET('sort_key');
+		if ($sort_key == 'uid')
+		{
+			$order = $sort_key . ' ' . $sort;
+			$url_param[] = 'sort_key-' . $sort_key;
+		}
+		else if ($is_mod AND $sort_key == 'user_update_time')
+		{
+			$order = $sort_key . ' ' . $sort;
+			$url_param[] = 'sort_key-' . $sort_key;
+		}
+		else if ($is_mod AND $sort_key == 'mod_time')
+		{
+			$order = $sort_key . ' ' . $sort;
+			$url_param[] = 'sort_key-' . $sort_key;
+		}
+		else
+		{
+			$order = 'reputation ' . $sort . ', uid ' . $sort;
+		}
+
+		$group_id = H::GET_I('group_id');
+		if ($group_id > 0)
+		{
+			if ($all_groups[$group_id]['type'] == 2 OR ($is_admin AND $all_groups[$group_id]['type'] == 0))
 			{
-				$user = $this->model('account')->get_user_info_by_username($_GET['id'], TRUE);
+				$where[] = [['group_id', 'eq', $group_id], 'or', ['flagged', 'eq', $group_id]];
+				$url_param[] = 'group_id-' . $group_id;
+			}
+		}
+
+		$forbidden = H::GET_I('forbidden');
+		$flagged = H::GET_I('flagged');
+		if ($forbidden OR $flagged)
+		{
+			if ($forbidden)
+			{
+				$where[] = ['forbidden', 'notEq', 0];
+				$url_param[] = 'forbidden-1';
+			}
+
+			if ($flagged)
+			{
+				$where[] = ['flagged', 'notEq', 0];
+				$url_param[] = 'flagged-1';
 			}
 		}
 		else
 		{
-			$user = $this->model('account')->get_user_info_by_username($_GET['id'], TRUE);
+			$where[] = ['forbidden', 'eq', 0];
 		}
 
-		if (!$user)
-		{
-			HTTP::error_404();
-		}
+		$users_list = $this->model('account')->get_user_list($where, $order, H::GET('page'), S::get_int('contents_per_page'));
 
-		/*if ($user['forbidden'] AND !$this->user_info['permission']['is_administrator'] AND !$this->user_info['permission']['is_moderator'])
-		{
-			header('HTTP/1.1 404 Not Found');
-
-			H::redirect_msg(AWS_APP::lang()->_t('该用户已被封禁'), '/');
-		}*/
-
-		if (urldecode($user['url_token']) != $_GET['id'])
-		{
-			HTTP::redirect('/people/' . $user['url_token']);
-		}
-
-		$this->model('people')->update_view_count($user['uid']);
-
-		TPL::assign('user', $user);
-
-		TPL::assign('user_follow_check', $this->model('follow')->user_follow_check($this->user_id, $user['uid']));
-
-		$this->crumb(AWS_APP::lang()->_t('%s 的个人主页', $user['user_name']), 'people/' . $user['url_token']);
-
-		TPL::import_css('css/user.css');
-
-		TPL::assign('fans_list', $this->model('follow')->get_user_fans($user['uid'], 5));
-		TPL::assign('friends_list', $this->model('follow')->get_user_friends($user['uid'], 5));
-		TPL::assign('focus_topics', $this->model('topic')->get_focus_topic_list($user['uid'], 10));
-
-		TPL::assign('user_actions_questions', $this->model('actions')->get_user_actions($user['uid'], 5, ACTION_LOG::ADD_QUESTION, $this->user_id));
-		TPL::assign('user_actions_answers', $this->model('actions')->get_user_actions($user['uid'], 5, ACTION_LOG::ANSWER_QUESTION, $this->user_id));
-		TPL::assign('user_actions', $this->model('actions')->get_user_actions($user['uid'], 5, implode(',', array(
-			ACTION_LOG::ADD_QUESTION,
-			ACTION_LOG::ANSWER_QUESTION,
-			//ACTION_LOG::ADD_REQUESTION_FOCUS,
-			//ACTION_LOG::ADD_AGREE,
-			ACTION_LOG::ADD_ARTICLE
-		)), $this->user_id));
-
-		TPL::output('people/index');
-	}
-
-	public function index_square_action()
-	{
-
-		if (!$_GET['page'])
-		{
-			$_GET['page'] = 1;
-		}
-
-		$this->crumb(AWS_APP::lang()->_t('用户列表'), '/people/');
-
-		if ($_GET['topic_id'])
-		{
-			if ($helpful_users = $this->model('topic')->get_helpful_users_by_topic_ids($this->model('topic')->get_child_topic_ids($_GET['topic_id']), get_setting('contents_per_page'), 4))
-			{
-				foreach ($helpful_users AS $key => $val)
-				{
-					$users_list[$key] = $val['user_info'];
-					$users_list[$key]['experience'] = $val['experience'];
-
-
-					foreach ($val['experience'] AS $exp_key => $exp_val)
-					{
-						$users_list[$key]['total_agree_count'] += $exp_val['agree_count'];
-					}
-				}
-			}
-		}
-		else
-		{
-			$where = array();
-
-			if ($_GET['group_id'])
-			{
-				$where[] = 'group_id = ' . intval($_GET['group_id']);
-			}
-
-			$users_list = $this->model('account')->get_users_list(implode('', $where), calc_page_limit($_GET['page'], get_setting('contents_per_page')), true, false, 'forbidden ASC, reputation DESC');
-
-			$where[] = 'group_id <> 3';
-
-			TPL::assign('pagination', AWS_APP::pagination()->initialize(array(
-				'base_url' => get_js_url('/people/group_id-' . $_GET['group_id']),
-				'total_rows' => $this->model('account')->get_user_count(implode(' AND ', $where)),
-				'per_page' => get_setting('contents_per_page')
-			))->create_links());
-		}
+		TPL::assign('pagination', AWS_APP::pagination()->create(array(
+			'base_url' => url_rewrite('/people/') . implode('__', $url_param),
+			'total_rows' => $this->model('account')->total_rows(),
+			'per_page' => S::get_int('contents_per_page')
+		)));
 
 		if ($users_list)
 		{
-			foreach ($users_list as $key => $val)
+			if ($this->user_id)
 			{
-				if ($val['reputation'])
+				foreach ($users_list as $key => $val)
 				{
-					$reputation_users_ids[] = $val['uid'];
-					$users_reputations[$val['uid']] = $val['reputation'];
+					$uids[] = $val['uid'];
 				}
 
-				$uids[] = $val['uid'];
-			}
-
-			if ($uids AND $this->user_id)
-			{
-				$users_follow_check = $this->model('follow')->users_follow_check($this->user_id, $uids);
-			}
-
-			foreach ($users_list as $key => $val)
-			{
-				$users_list[$key]['focus'] = $users_follow_check[$val['uid']];
+				if ($uids)
+				{
+					$users_follow_check = $this->model('follow')->users_follow_check($this->user_id, $uids);
+					foreach ($users_list as $key => $val)
+					{
+						$users_list[$key]['focus'] = $users_follow_check[$val['uid']];
+					}
+				}
 			}
 
 			TPL::assign('users_list', array_values($users_list));
 		}
 
-		if (!$_GET['group_id'])
-		{
-			TPL::assign('parent_topics', $this->model('topic')->get_parent_topics());
-		}
-
-		TPL::assign('custom_group', $this->model('account')->get_user_group_list(0, 1));
+		TPL::assign('custom_group', $custom_group);
 
 		TPL::output('people/square');
 	}
+
+	public function index_action()
+	{
+		if (!H::GET('id'))
+		{
+			$this->index_square();
+			return;
+		}
+
+		if (is_numeric(H::GET('id')))
+		{
+			$user = $this->model('account')->get_user_info_by_uid(H::GET('id'));
+			if (!$user)
+			{
+				H::error_404();
+			}
+			H::redirect('/people/' . safe_url_encode($user['user_name']));
+		}
+
+		$user = $this->model('account')->get_user_info_by_username(H::GET('id'));
+		if (!$user)
+		{
+			H::error_404();
+		}
+
+		$user['reputation_group_name'] = $this->model('usergroup')->get_user_group_name_by_user_info($user);
+
+		$user['data'] = unserialize_array($user['extra_data']);
+
+		TPL::assign('user', $user);
+
+		TPL::assign('user_follow_check', $this->model('follow')->user_follow_check($this->user_id, $user['uid']));
+
+		$this->crumb(_t('%s 的个人主页', $user['user_name']));
+
+		TPL::assign('fans_list', $this->model('follow')->get_user_fans($user['uid'], 1, 5));
+		TPL::assign('friends_list', $this->model('follow')->get_user_friends($user['uid'], 1, 5));
+
+		TPL::output('people/index');
+	}
+
 }

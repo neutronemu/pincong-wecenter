@@ -34,16 +34,15 @@ class AWS_APP
 	private static $pagination;
 	private static $cache;
 	private static $lang;
-	private static $session;
 	private static $captcha;
-	private static $user;
 	private static $crypt;
-
-	public static $session_type = 'file';
+	private static $token;
+	private static $auth;
+	private static $uri;
 
 	private static $models = array();
 
-	public static $settings = array();
+	private static $debug_mode;
 	public static $_debug = array();
 
 	/**
@@ -53,17 +52,19 @@ class AWS_APP
 	{
 		self::init();
 
-		load_class('core_uri')->set_rewrite();
+		self::$uri = load_class('core_uri');
+		if (!self::$uri->parse())
+		{
+			H::error_404();
+		}
 
-		// 传入应用目录, 返回控制器对象
-		$handle_controller = self::create_controller(load_class('core_uri')->controller, load_class('core_uri')->app_dir);
-
-		$action_method = load_class('core_uri')->action . '_action';
+		$handle_controller = self::create_controller();
+		$action_method = self::$uri->action . '_action';
 
 		// 判断
-		if (! is_object($handle_controller) OR ! method_exists($handle_controller, $action_method))
+		if (!is_object($handle_controller) OR !method_exists($handle_controller, $action_method))
 		{
-			HTTP::error_404();
+			H::error_404();
 		}
 
 		if (method_exists($handle_controller, 'get_access_rule'))
@@ -71,35 +72,61 @@ class AWS_APP
 			$access_rule = $handle_controller->get_access_rule();
 		}
 
-		// 判断访问规则使用白名单还是黑名单, 默认使用黑名单
+		$uid = $handle_controller->user_id;
+
+		// 判断访问规则使用白名单还是黑名单, 默认使用白名单
+		// 白名单: $access_rule['actions'] 以外的都不允许
+		// 黑名单: $access_rule['actions'] 以外的都允许
 		if ($access_rule)
 		{
-			// 黑名单, 黑名单中的检查 'white' 白名单,白名单以外的检查 (默认是黑名单检查)
-			if (isset($access_rule['rule_type']) AND $access_rule['rule_type'] == 'white')
+			if (isset($access_rule['rule_type']) AND $access_rule['rule_type'] == 'black')
 			{
-				if ((! $access_rule['actions']) OR (! in_array(load_class('core_uri')->action, $access_rule['actions'])))
+				if (isset($access_rule['actions']) AND in_array(self::$uri->action, $access_rule['actions']))
 				{
-					self::login();
+					// action 在黑名单中, 不允许
+					self::check_login($uid, $access_rule['redirect'] ?? null);
 				}
 			}
-			else if (isset($access_rule['actions']) AND in_array(load_class('core_uri')->action, $access_rule['actions']))	// 非白就是黑名单
+			else // 默认使用白名单
 			{
-				self::login();
+				if (!isset($access_rule['actions']) OR !in_array(self::$uri->action, $access_rule['actions']))
+				{
+					// action 不在白名单中, 不允许
+					self::check_login($uid, $access_rule['redirect'] ?? null);
+				}
 			}
-
 		}
 		else
 		{
-			self::login();
+			self::check_login($uid);
 		}
 
 		// 执行
-        if (!$_GET['id'] AND method_exists($handle_controller, load_class('core_uri')->action . '_square_action'))
-        {
-            $action_method = load_class('core_uri')->action . '_square_action';
-        }
+		$handle_controller->$action_method();
+	}
 
-        $handle_controller->$action_method();
+	/**
+	 * 检查用户登录状态
+	 *
+	 * 检查用户登录状态并带领用户进入相关操作
+	 */
+	private static function check_login($uid, $redirect = true)
+	{
+		if (!$uid)
+		{
+			if ($redirect === false) // null 也跳转
+			{
+				H::error_403();
+			}
+			elseif (defined('IN_AJAX') OR $_POST['_post_type'] == 'ajax')
+			{
+				H::ajax_error(_t('会话超时, 请重新登录'));
+			}
+			else
+			{
+				H::redirect('/login/');
+			}
+		}
 	}
 
 	/**
@@ -107,58 +134,30 @@ class AWS_APP
 	 */
 	private static function init()
 	{
-		set_exception_handler(array('AWS_APP', 'exception_handle'));
+		self::$debug_mode = !!self::config()->get('system')->debug;
+
+		self::set_handlers();
 
 		self::$config = load_class('core_config');
 		self::$db = load_class('core_db');
 
-		self::$settings = self::model('setting')->get_settings();
+		S::init();
 
-		if ((!defined('G_SESSION_SAVE') OR G_SESSION_SAVE == 'db') AND get_setting('db_version') > 20121123)
-		{
-			Zend_Session::setSaveHandler(new Zend_Session_SaveHandler_DbTable(array(
-			    'name' 					=> get_table('sessions'),
-			    'primary'				=> 'id',
-			    'modifiedColumn'		=> 'modified',
-			    'dataColumn'			=> 'data',
-			    'lifetimeColumn'		=> 'lifetime',
-				//'authIdentityColumn'	=> 'uid'
-			)));
-
-			self::$session_type = 'db';
-		}
-
-		Zend_Session::setOptions(array(
-			'name' => G_COOKIE_PREFIX . '_Session',
-			'cookie_domain' => G_COOKIE_DOMAIN
-		));
-
-		if (G_SESSION_SAVE == 'file' AND G_SESSION_SAVE_PATH)
-		{
-			Zend_Session::setOptions(array(
-				'save_path' => G_SESSION_SAVE_PATH
-			));
-		}
-
-		Zend_Session::start();
-
-		self::$session = new Zend_Session_Namespace(G_COOKIE_PREFIX . '_Anwsion');
-
-		if ($default_timezone = get_setting('default_timezone'))
+		if ($default_timezone = S::get('default_timezone'))
 		{
 			date_default_timezone_set($default_timezone);
 		}
 
-		if ($img_url = get_setting('img_url'))
-        {
-            define('G_STATIC_URL', $img_url);
-        }
-        else
-        {
-            define('G_STATIC_URL', base_url() . '/static');
-        }
+		if ($img_url = S::get('img_url'))
+		{
+			define('G_STATIC_URL', $img_url);
+		}
+		else
+		{
+			define('G_STATIC_URL', base_url() . '/static');
+		}
 
-		if (self::config()->get('system')->debug)
+		if (self::$debug_mode)
 		{
 			if ($cornd_timer = self::cache()->getGroup('crond'))
 			{
@@ -173,39 +172,18 @@ class AWS_APP
 		}
 	}
 
-	/**
-	 * 创建 Controller
-	 *
-	 * 根据传入的控制器名称与 app_dir 载入 Controller 相关文件
-	 *
-	 * @access	public
-	 * @param	string
-	 * @param	string
-	 * @return	object
-	 */
-	public static function create_controller($controller, $app_dir)
+	// 创建 Controller
+	private static function create_controller()
 	{
-		if ($app_dir == '' OR trim($controller, '/') === '')
+		$controller_class = self::$uri->controller;
+
+		if (!class_exists($controller_class, false))
 		{
-			return false;
-		}
-
-		$class_file = $app_dir . $controller . '.php';
-
-		$controller_class = str_replace('/', '_', $controller);
-
-		if (! file_exists($class_file))
-		{
-			return false;
-		}
-
-		if (! class_exists($controller_class, false))
-		{
-			require_once $class_file;
+			require_once self::$uri->class_file;
 		}
 
 		// 解析路由查询参数
-		load_class('core_uri')->parse_args();
+		self::$uri->parse_args();
 
 		if (class_exists($controller_class, false))
 		{
@@ -215,22 +193,35 @@ class AWS_APP
 		return false;
 	}
 
+	private static function set_handlers()
+	{
+		set_error_handler(function ($errno, $errstr, $errfile, $errline) {
+			if (!(error_reporting() & $errno))
+			{
+				return false;
+			}
+
+		// error was suppressed with the @-operator
+		if (0 === error_reporting())
+		{
+			return false;
+		}
+
+			if (!self::$debug_mode)
+			{
+				return;
+			}
+			$message = friendly_error_type($errno) . ": " . $errstr . " File: " . $errfile . " Line: " . $errline;
+			AWS_APP::debug_log('error', 0, $message);
+		});
+
+		set_exception_handler(function ($exception) {
+			$message = "Application error\n------\n\nMessage: " . $exception->getMessage() . "\nFile: " . $exception->getFile() . "\nLine: " . $exception->getLine() . "\nURI: " . $_SERVER['REQUEST_URI'] . "\n------\n" . $exception->getTraceAsString();
+			show_error($message);
+		});
+	}
+
 	/**
-	 * 异常处理
-	 *
-	 * 获取系统异常 & 处理
-	 *
-	 * @access	public
-	 * @param	object
-	 */
-	public static function exception_handle($exception)
-    {
-		$exception_message = "Application error\n------\nMessage: " . $exception->getMessage() . "\nFile: " . $exception->getFile() . "\nLine: " . $exception->getLine() . "\nURI: " . $_SERVER['REQUEST_URI'] . "\nAccept Language: " . $_SERVER['HTTP_ACCEPT_LANGUAGE'] . "\n------\n" . $exception->getTraceAsString();
-
-        show_error($exception_message, $exception->getMessage());
-    }
-
-   	/**
 	 * 格式化系统返回消息
 	 *
 	 * 格式化系统返回的消息 json 数据包给前端进行处理
@@ -250,26 +241,6 @@ class AWS_APP
 	}
 
 	/**
-	 * 检查用户登录状态
-	 *
-	 * 检查用户登录状态并带领用户进入相关操作
-	 */
-	public static function login()
-	{
-		if (! AWS_APP::user()->get_info('uid'))
-		{
-			if ($_POST['_post_type'] == 'ajax')
-			{
-				H::ajax_json_output(self::RSM(null, -1, AWS_APP::lang()->_t('会话超时, 请重新登录')));
-			}
-			else
-			{
-				HTTP::redirect('/account/login/url-' . base64_current_path());
-			}
-		}
-	}
-
-	/**
 	 * 获取系统配置
 	 *
 	 * 调用 core/config.php
@@ -285,24 +256,6 @@ class AWS_APP
 		}
 
 		return self::$config;
-	}
-
-	/**
-	 * 获取用户信息类
-	 *
-	 * 调用 core/user.php
-	 *
-	 * @access	public
-	 * @return	object
-	 */
-	public static function user()
-	{
-		if (!self::$user)
-		{
-			self::$user = load_class('core_user');
-		}
-
-		return self::$user;
 	}
 
 	/**
@@ -432,35 +385,21 @@ class AWS_APP
 	}
 
 	/**
-	 * 调用系统 Session
-	 *
-	 * 此功能基于 Zend_Session 类库
-	 *
-	 * @access	public
-	 * @return	object
-	 */
-	public static function session()
-	{
-		return self::$session;
-	}
-
-	/**
 	 * 调用系统数据库
 	 *
-	 * 此功能基于 Zend_DB 类库
+	 * 此功能基于 PDO
 	 *
 	 * @access	public
-	 * @param	string
 	 * @return	object
 	 */
-	public static function db($db_object_name = 'master')
+	public static function db()
 	{
 		if (!self::$db)
 		{
 			self::$db = load_class('core_db');
 		}
 
-		return self::$db->setObject($db_object_name);
+		return self::$db;
 	}
 
 	/**
@@ -482,6 +421,42 @@ class AWS_APP
 	}
 
 	/**
+	 * token 处理类
+	 *
+	 * 调用 core/token.php
+	 *
+	 * @access	public
+	 * @return	object
+	 */
+	public static function token()
+	{
+		if (!self::$token)
+		{
+			self::$token = load_class('core_token');
+		}
+
+		return self::$token;
+	}
+
+	/**
+	 * auth 处理类
+	 *
+	 * 调用 core/auth.php
+	 *
+	 * @access	public
+	 * @return	object
+	 */
+	public static function auth()
+	{
+		if (!self::$auth)
+		{
+			self::$auth = load_class('core_auth');
+		}
+
+		return self::$auth;
+	}
+
+	/**
 	 * 记录系统 Debug 事件
 	 *
 	 * 打开 debug 功能后相应事件会在页脚输出
@@ -493,10 +468,13 @@ class AWS_APP
 	 */
 	public static function debug_log($type, $expend_time, $message)
 	{
+		$root_dir = rtrim(ROOT_PATH, '/\\');
+		$message = str_replace($root_dir, '', $message);
+
 		self::$_debug[$type][] = array(
 			'expend_time' => $expend_time,
 			'log_time' => microtime(true),
-			'message' => $message
+			'message' => htmlspecialchars($message)
 		);
 	}
 

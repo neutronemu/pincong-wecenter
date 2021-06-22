@@ -1,46 +1,38 @@
-<?php TPL::output('global/header.tpl.htm'); ?>
+<?php TPL::include('global/header.tpl.htm'); ?>
+
+<script src="<?php echo G_STATIC_URL; ?>/js/app/publish.js?v=<?php echo G_DISPLAY_VERSION_BUILD; ?>"></script>
 
 <div class="aw-container-wrap">
 	<div class="container aw-publish aw-publish-article">
 		<div class="row">
 			<div class="aw-content-wrap clearfix">
-				<div class="col-sm-12 col-md-9 aw-main-content">
+				<div class="col-sm-12 aw-main-content">
 					<!-- tab 切换 -->
 					<ul class="nav nav-tabs aw-nav-tabs active">
-						<li class="active"><a href="publish/video/"><?php _e('投稿'); ?></a></li>
-						<?php if ($this->user_info['permission']['publish_article']) { ?>
-						<li><a href="publish/article/"><?php _e('文章'); ?></a></li>
-						<?php } ?>
-						<?php if ($this->user_info['permission']['publish_question']) { ?>
-						<li><a href="publish/"><?php _e('问题'); ?></a></li>
-						<?php } ?>
-						<h2 class="hidden-xs"><i class="icon icon-ask"></i> <?php _e('发起'); ?></h2>
+						<li class="active"><a href="<?php echo url_rewrite(); ?>/publish/video/"><?php echo _t('影片'); ?></a></li>
+						<li><a href="<?php echo url_rewrite(); ?>/publish/article/"><?php echo _t('文章'); ?></a></li>
+						<li><a href="<?php echo url_rewrite(); ?>/publish/"><?php echo _t('问题'); ?></a></li>
+						<h2 class="hidden-xs"><i class="icon icon-ask"></i> <?php echo _t('发起'); ?></h2>
 					</ul>
 					<!-- end tab 切换 -->
-					<form action="publish/ajax/<?php if ($this->video_info['id']) { ?>modify<?php } else { ?>publish<?php } ?>_video/" method="post" id="question_form" onsubmit="return false;">
-						<input type="hidden" name="post_hash" value="<?php echo new_post_hash(); ?>" />
-						<input type="hidden" name="article_id" id="article_id" value="<?php echo $this->video_info['id']; ?>" />
-						<?php if ($this->video_category_list) { ?>
+					<form action="<?php echo url_rewrite(); ?>/<?php if ($this->thread_info['id']) { ?>modify/ajax/modify_video/<?php } else { ?>publish/ajax/publish_video/<?php } ?>" method="post" id="question_form" onsubmit="return false;">
+						<input type="hidden" name="video_id" id="video_id" value="<?php echo $this->thread_info['id']; ?>" />
+						<?php if (!$this->thread_info['id'] AND S::get('category_enable') != 'N') { ?>
 							<select name="category_id" class="collapse" id="category_id">
-								<option value="0">- <?php _e('请选择分类'); ?> -</option>
-								<?php echo $this->video_category_list; ?>
+								<option value="0">- <?php echo _t('请选择分类'); ?> -</option>
+								<?php TPL::include('block/category_options.tpl.htm'); ?>
 							</select>
-							<?php } ?>
+						<?php } ?>
 						<div class="aw-mod aw-mod-publish">
 							<div class="mod-body">
-								<h3><?php _e('标题'); ?>:</h3>
+								<h3><?php echo _t('标题'); ?>:</h3>
 								<!-- 标题 -->
-								<div class="aw-publish-title<?php if (!$this->video_category_list) { ?> active<?php } ?>">
-									<input type="text" name="title" value="<?php echo $this->video_info['title']; ?>" class="form-control" />
-									<?php if ($this->video_category_list) { ?>
-									<div class="aw-dropdown aw-question-dropdown">
-										<i class="aw-icon i-dropdown-triangle active"></i>
-										<p class="title"><?php _e('没有找到相关结果'); ?></p>
-										<ul class="aw-question-dropdown-list"></ul>
-									</div>
+								<div class="aw-publish-title<?php if (S::get('category_enable') == 'N') { ?> active<?php } ?>">
+									<input type="text" name="title" value="<?php echo FORMAT::text($this->thread_info['title']); ?>" class="form-control" />
+									<?php if (!$this->thread_info['id'] AND S::get('category_enable') != 'N') { ?>
 									<div class="dropdown">
 										<div class="dropdown-toggle" data-toggle="dropdown">
-											<span id="aw-topic-tags-select"><?php _e('选择分类'); ?></span>
+											<span id="aw-topic-tags-select"><?php echo _t('选择分类'); ?></span>
 											<a href="javascript:;"><i class="icon icon-down"></i></a>
 										</div>
 									</div>
@@ -48,119 +40,90 @@
 								</div>
 								<!-- end 标题 -->
 
-								<h3><?php _e('详细'); ?>:</h3>
+								<h3><?php echo _t('详细'); ?>:</h3>
 								<div class="aw-mod aw-editor-box">
 									<div class="mod-head">
 										<div class="wmd-panel">
-											<textarea class="wmd-input form-control autosize editor" id="wmd-input" rows="4" name="message"><?php echo $this->video_info['message']; ?></textarea>
+											<textarea class="wmd-input form-control autosize editor" id="wmd-input" rows="4" name="message"><?php echo FORMAT::text($this->thread_info['message']); ?></textarea>
 										</div>
 									</div>
 									<div class="mod-body">
 									</div>
 								</div>
 
-								<h3><?php _e('视频来源'); ?>:</h3>
+								<h3><?php echo _t('影片来源'); ?>:</h3>
 								<div class="aw-mod">
 									<div class="mod-head">
 										<div class="">
-											<input type="text" name="video_webpage_url" placeholder="https://" value="" class="form-control" />
+											<input type="text" name="web_url" placeholder="<?php if ($this->thread_info['id']) { ?><?php echo _t('不更改请留空'); ?><?php } else { ?>https://<?php } ?>" value="" class="form-control" />
 										</div>
 									</div>
 									<div class="mod-body">
-										<span><?php _e('支持以下格式 URL'); ?></span>
-										<br /><span>https://www.youtube.com/watch?v=abcdefghijk</span>
-										<br /><span>https://m.youtube.com/watch?v=abcdefghijk</span>
-										<br /><span>https://youtube.com/watch?v=abcdefghijk</span>
-										<br /><span>https://youtu.be/abcdefghijk</span>
-										<br /><span>https://www.youtube.com/embed/abcdefghijk</span>
+										<span><?php echo _t('支持以下格式 URL'); ?></span>
+										<pre><?php echo safe_text(S::get('video_config_example_url')); ?></pre>
 									</div>
 								</div>
 
-								<?php if (!$this->video_info['id']) { ?>
-								<h3><?php _e('添加话题'); ?>:</h3>
+								<?php if (!$this->thread_info['id']) { ?>
+								<h3><?php echo _t('添加话题'); ?>:</h3>
 								<div class="aw-topic-bar" data-type="publish">
 									<div class="tag-bar clearfix">
 										<?php if ($_GET['topic_title']) { ?>
 										<span class="topic-tag">
-											<a class="text"><?php echo urldecode($_GET['topic_title']); ?></a>
+											<a class="text"><?php echo htmlspecialchars($_GET['topic_title']); ?></a>
 											<a class="close" onclick="$(this).parents('.topic-tag').remove();">
 												<i class="icon icon-delete"></i>
 											</a>
-											<input type="hidden" value="<?php echo urldecode($_GET['topic_title']); ?>" name="topics[]" />
+											<input type="hidden" value="<?php echo htmlspecialchars($_GET['topic_title']); ?>" name="topics[]" />
 										</span>
 										<?php } ?>
 
-										<span class="aw-edit-topic icon-inverse"><i class="icon icon-edit"></i> <?php _e('编辑话题'); ?></span>
+										<span class="aw-edit-topic icon-inverse"><i class="icon icon-edit"></i> <?php echo _t('编辑话题'); ?></span>
 									</div>
 								</div>
 
-								<?php if ($this->recent_topics) { ?>
-								<h3><?php _e('最近话题'); ?>:</h3>
-								<div class="aw-topic-bar">
-									<div class="topic-bar clearfix">
-										<?php foreach($this->recent_topics as $key => $val) { ?>
-										<span class="topic-tag" onclick="$('#aw_edit_topic_title').val('<?php echo $val; ?>');$('.add').click();$(this).hide();">
-											<a class="text">
-												<?php echo $val; ?>
-											</a>
-										</span>
-										<?php } ?>
-									</div>
-								</div>
-								<?php } ?>
 								<?php } else { ?>
 								<h3>&nbsp;</h3>
 								<?php } ?>
 
-								<?php if (!$this->video_info['id']) { ?>
+								<?php if (!$this->thread_info['id']) { ?>
 								<div class="aw-auth-img clearfix">
-									<input name="later" class="form-control pull-right" type="text" placeholder="<?php _e('分钟'); ?>" />
-									<label class="pull-right"><?php _e('延迟显示'); ?></label>
+									<input id="later_time_input" name="later" class="form-control pull-right" type="text" placeholder="<?php echo _t('分钟'); ?>" />
+									<label class="pull-right">&nbsp;<?php echo _t('延迟显示'); ?></label>
+									<label id="later_time_label" class="pull-right"></label>
 								</div>
 								<?php } ?>
 
 							</div>
 							<div class="mod-footer clearfix">
-								<a href="currency/rule/" target="_blank">[<?php _e(get_setting('currency_rule_name')); ?>]</a>
+								<a href="<?php echo url_rewrite(); ?>/currency/rule/" target="_blank">[<?php _e(S::get('currency_rule_name')); ?>]</a>
 								<span class="aw-anonymity">
-									<?php if ($this->video_info['id']) { ?>
+									<?php if ($this->thread_info['id']) { ?>
 									<label><input type="checkbox" class="pull-left" value="1" name="do_delete" />
-										<?php _e('删除'); ?>&nbsp;</label>
+										<?php echo _t('删除'); ?>&nbsp;</label>
 									<?php } ?>
 
-									<?php if (!$this->video_info['id']) { ?>
+									<?php if (!$this->thread_info['id'] AND $this->user_info['permission']['post_anonymously']) { ?>
 									<label><input type="checkbox" class="pull-left" value="1" name="anonymous" />
-										<?php _e('匿名'); ?></label>
+										<?php echo _t('用这个身份发表'); ?>: <a href="<?php echo UF::url(get_anonymous_user_info($this->user_info)); ?>"><?php echo UF::name(get_anonymous_user_info($this->user_info)); ?></a></label>
 									<?php } ?>
 								</span>
-								<a class="btn btn-large btn-success btn-publish-submit" id="publish_submit" onclick="AWS.ajax_post($('#question_form')); return false;"><?php _e('确认发起'); ?></a>
+								<a class="btn btn-large btn-success btn-publish-submit" id="publish_submit" onclick="AWS.submit_form($('#question_form'), $(this)); return false;"><?php echo _t('确认发起'); ?></a>
 							</div>
 						</div>
 					</form>
 				</div>
-				<!-- 侧边栏 -->
-				<div class="col-sm-12 col-md-3 aw-side-bar">
-					<!-- 发起指南 -->
-					<div class="aw-mod publish-help">
-						<div class="mod-head">
-							<h3><?php _e('发起指南'); ?></h3>
-						</div>
-						<div class="mod-body">
-							<p><b>• <?php _e('标题'); ?>:</b> <?php _e('请用准确的语言描述您发布的内容'); ?></p>
-							<p><b>• <?php _e('补充'); ?>:</b> <?php _e('详细补充您的内容'); ?></p>
-							<p><b>• <?php _e('选择话题'); ?>:</b> <?php _e('选择一个或者多个合适的话题, 让您发布的内容得到更多有相同兴趣的人参与. 所有人可以在您发布内容之后添加和编辑该内容所属的话题'); ?></p>
-						</div>
-					</div>
-					<!-- end 发起指南 -->
-				</div>
-				<!-- end 侧边栏 -->
 			</div>
 		</div>
 	</div>
 </div>
 
 <script type="text/javascript">
-	var CATEGORY_ID = <?php echo $this->video_info['category_id']; ?>;
+var CATEGORY_ID = <?php echo $this->thread_info['category_id']; ?>;
+
+$(document).ready(function () {
+	AWS.init_later_time_helper($('#later_time_input'), $('#later_time_label'));
+});
 </script>
 
-<?php TPL::output('global/footer.tpl.htm'); ?>
+<?php TPL::include('global/footer.tpl.htm'); ?>

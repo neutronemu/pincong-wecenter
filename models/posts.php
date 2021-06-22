@@ -32,7 +32,7 @@ class posts_class extends AWS_MODEL
 	}
 
 	// set_posts_index 现在仅在发帖/回复时调用
-	public function set_posts_index($post_id, $post_type, $post_data = null, $bring_to_top = true)
+	public function set_posts_index($post_id, $post_type, $post_data = null)
 	{
 		if ($post_data)
 		{
@@ -43,15 +43,15 @@ class posts_class extends AWS_MODEL
 			switch ($post_type)
 			{
 				case 'question':
-					$result = $this->fetch_row('question', 'question_id = ' . intval($post_id));
+					$result = $this->fetch_row('question', ['id', 'eq', $post_id, 'i']);
 					break;
 
 				case 'article':
-					$result = $this->fetch_row('article', 'id = ' . intval($post_id));
+					$result = $this->fetch_row('article', ['id', 'eq', $post_id, 'i']);
 					break;
 
 				case 'video':
-					$result = $this->fetch_row('video', 'id = ' . intval($post_id));
+					$result = $this->fetch_row('video', ['id', 'eq', $post_id, 'i']);
 					break;
 			}
 
@@ -63,62 +63,28 @@ class posts_class extends AWS_MODEL
 
 		switch ($post_type)
 		{
-			// TODO: 统一字段名称
 			case 'question':
-				$data = array(
-					'add_time' => $result['add_time'],
-					'update_time' => $result['update_time'],
-					'category_id' => $result['category_id'],
-					'view_count' => $result['view_count'],
-					'anonymous' => $result['anonymous'],
-					'uid' => $result['published_uid'],
-					'agree_count' => $result['agree_count'],
-					'answer_count' => $result['answer_count'],
-					'lock' => $result['lock'],
-					'is_recommend' => $result['is_recommend'],
-				);
-				break;
-
 			case 'article':
-				$data = array(
-					'add_time' => $result['add_time'],
-					'update_time' => $result['update_time'],
-					'category_id' => $result['category_id'],
-					'view_count' => $result['views'],
-					'anonymous' => $result['anonymous'],
-					'uid' => $result['uid'],
-					'agree_count' => $result['agree_count'],
-					'answer_count' => $result['comments'],
-					'lock' => $result['lock'],
-					'is_recommend' => $result['is_recommend'],
-				);
-				break;
-
 			case 'video':
-				$data = array(
-					'add_time' => $result['add_time'],
-					'update_time' => $result['update_time'],
-					'category_id' => $result['category_id'],
-					'view_count' => $result['view_count'],
-					'anonymous' => $result['anonymous'],
-					'uid' => $result['uid'],
-					'agree_count' => $result['agree_count'],
-					'answer_count' => $result['comment_count'],
-					'lock' => $result['lock'],
-					'is_recommend' => $result['is_recommend'],
-				);
 				break;
 
 			default:
 				return false;
 		}
 
-		if (!$bring_to_top)
-		{
-			unset($data['update_time']);
-		}
-		else
-		if (!$post_data AND get_setting('time_blurring') != 'N')
+		$data = array(
+			'add_time' => $result['add_time'],
+			'update_time' => $result['update_time'],
+			'uid' => $result['uid'],
+			'category_id' => $result['category_id'],
+			'view_count' => $result['view_count'],
+			'reply_count' => $result['reply_count'],
+			'agree_count' => $result['agree_count'],
+			'lock' => $result['lock'],
+			'recommend' => $result['recommend'],
+		);
+
+		if (!$post_data AND S::get('time_blurring') != 'N')
 		{
 			// 用于模糊时间的排序
 			$last_update_time = $this->get_last_update_time();
@@ -129,15 +95,15 @@ class posts_class extends AWS_MODEL
 			}
 		}
 
-		if ($posts_index = $this->fetch_all('posts_index', "post_id = " . intval($post_id) . " AND post_type = '" . $this->quote($post_type) . "'"))
+		if ($posts_index = $this->fetch_all('posts_index', [['post_id', 'eq', $post_id, 'i'], ['post_type', 'eq', $post_type]]))
 		{
 			$post_index = end($posts_index);
 
-			$this->update('posts_index', $data, 'id = ' . intval($post_index['id']));
+			$this->update('posts_index', $data, ['id', 'eq', $post_index['id'], 'i']);
 
 			if (sizeof($posts_index) > 1)
 			{
-				$this->delete('posts_index', "post_id = " . intval($post_id) . " AND post_type = '" . $this->quote($post_type) . "' AND id != " . intval($post_index['id']));
+				$this->delete('posts_index', [['post_id', 'eq', $post_id, 'i'], ['post_type', 'eq', $post_type], ['id', 'notEq', $post_index['id'], 'i']]);
 			}
 		}
 		else
@@ -155,160 +121,32 @@ class posts_class extends AWS_MODEL
 
 	public function remove_posts_index($post_id, $post_type)
 	{
-		return $this->delete('posts_index', "post_id = " . intval($post_id) . " AND post_type = '" . $this->quote($post_type) . "'");
+		return $this->delete('posts_index', [['post_id', 'eq', $post_id, 'i'], ['post_type', 'eq', $post_type]]);
 	}
 
-	public function get_posts_list($post_type, $page = 1, $per_page = 10, $sort = null, $topic_ids = null, $category_id = null, $answer_count = null, $day = 30, $is_recommend = false)
+	// 得到在首页显示的分类
+	public function get_default_category_ids()
 	{
-		$order_key = 'add_time DESC';
-
-		switch ($sort)
+		static $ids;
+		if ($ids)
 		{
-			case 'responsed':
-				$answer_count = 1;
-
-				break;
-
-			case 'unresponsive':
-				$answer_count = 0;
-
-				break;
-
-			case 'new' :
-				$order_key = 'update_time DESC';
-
-				break;
+			return $ids;
 		}
 
-		if (is_array($topic_ids))
+		$categories = $this->model('category')->get_category_list();
+		foreach ($categories AS $key => $val)
 		{
-			foreach ($topic_ids AS $key => $val)
+			if (!$val['skip'])
 			{
-				if (!$val)
-				{
-					unset($topic_ids[$key]);
-				}
+				$ids[] = $val['id'];
 			}
 		}
 
-		if ($topic_ids)
+		if (!$ids)
 		{
-			$posts_index = $this->get_posts_list_by_topic_ids($post_type, $post_type, $topic_ids, $category_id, $answer_count, $order_key, $is_recommend, $page, $per_page);
+			$ids = array(0);
 		}
-		else
-		{
-			$where = array();
-
-			if (isset($answer_count))
-			{
-				$answer_count = intval($answer_count);
-
-				if ($answer_count == 0)
-				{
-					$where[] = "answer_count = " . $answer_count;
-				}
-				else if ($answer_count > 0)
-				{
-					$where[] = "answer_count >= " . $answer_count;
-				}
-			}
-
-			if ($is_recommend)
-			{
-				$where[] = 'is_recommend = 1';
-			}
-
-			if ($category_id)
-			{
-				$where[] = 'category_id IN(' . implode(',', $this->model('system')->get_category_with_child_ids('question', $category_id)) . ')';
-			}
-
-			if ($post_type)
-			{
-				$where[] = "post_type = '" . $this->quote($post_type) . "'";
-			}
-
-			$posts_index = $this->fetch_page('posts_index', implode(' AND ', $where), $order_key, $page, $per_page);
-
-			$this->posts_list_total = $this->found_rows();
-		}
-
-		return $this->process_explore_list_data($posts_index);
-	}
-
-	public function get_hot_posts($post_type, $category_id = 0, $topic_ids = null, $day = 30, $page = 1, $per_page = 10)
-	{
-		if ($day)
-		{
-			$add_time = strtotime('-' . $day . ' Day');
-		}
-
-		$where[] = 'add_time > ' . intval($add_time);
-
-		if ($post_type)
-		{
-			$where[] = "post_type = '" . $this->quote($post_type) . "'";
-		}
-
-		if ($category_id)
-		{
-			$where[] = 'category_id IN(' . implode(',', $this->model('system')->get_category_with_child_ids('question', $category_id)) . ')';
-		}
-
-		if (is_array($topic_ids))
-		{
-			foreach ($topic_ids AS $key => $val)
-			{
-				if (!$val)
-				{
-					unset($topic_ids[$key]);
-				}
-			}
-		}
-
-		if ($topic_ids)
-		{
-			array_walk_recursive($topic_ids, 'intval_string');
-
-			if (!$post_type)
-			{
-				if ($question_post_ids = $this->model('topic')->get_item_ids_by_topics_ids($topic_ids, 'question') OR $article_post_ids = $this->model('topic')->get_item_ids_by_topics_ids($topic_ids, 'article'))
-				{
-					if ($question_post_ids)
-					{
-						$topic_where[] = 'post_id IN(' . implode(',', $question_post_ids) . ") AND post_type = 'question'";
-					}
-
-					if ($article_post_ids)
-					{
-						$topic_where[] = 'post_id IN(' . implode(',', $article_post_ids) . ") AND post_type = 'article'";
-					}
-
-					if ($topic_where)
-					{
-						$where[] = '(' . implode(' OR ', $topic_where) . ')';
-					}
-				}
-				else
-				{
-					return false;
-				}
-			}
-			else if ($post_ids = $this->model('topic')->get_item_ids_by_topics_ids($topic_ids, $post_type))
-			{
-				$where[] = 'post_id IN(' . implode(',', $post_ids) . ") AND post_type = '" . $post_type . "'";
-			}
-			else
-			{
-				return false;
-			}
-		}
-
-		$posts_index = $this->fetch_page('posts_index', implode(' AND ', $where), 'answer_count DESC', $page, $per_page);
-
-		$this->posts_list_total = $this->found_rows();
-
-		return $this->process_explore_list_data($posts_index);
+		return $ids;
 	}
 
 	public function get_posts_list_total()
@@ -323,266 +161,239 @@ class posts_class extends AWS_MODEL
 			return false;
 		}
 
-		foreach ($posts_index as $key => $data)
+		foreach ($posts_index as $data)
 		{
-			switch ($data['post_type'])
-			{
-				case 'question':
-					$question_ids[] = $data['post_id'];
-					break;
-
-				case 'article':
-					$article_ids[] = $data['post_id'];
-					break;
-
-				case 'video':
-					$video_ids[] = $data['post_id'];
-					break;
-
-			}
-
+			$info[$data['post_type']][$data['post_id']] = $data['post_id'];
 			$data_list_uids[$data['uid']] = $data['uid'];
 		}
 
-		if ($question_ids)
+		if (!$info)
 		{
-			if ($last_answers = $this->model('answer')->get_last_answer_by_question_ids($question_ids))
+			return false;
+		}
+
+		foreach ($info as $type => $ids)
+		{
+			$threads = $this->model('content')->get_threads_by_ids($type, $ids);
+			if (!$threads)
 			{
-				foreach ($last_answers as $key => $val)
-				{
-					$data_list_uids[$val['uid']] = $val['uid'];
-				}
+				$threads = array();
 			}
-
-			$topic_infos['question'] = $this->model('topic')->get_topics_by_item_ids($question_ids, 'question');
-
-			$question_infos = $this->model('question')->get_question_info_by_ids($question_ids);
+			foreach ($threads as $val)
+			{
+				$data_list_uids[$val['last_uid']] = $val['last_uid'];
+			}
+			$info[$type] = $threads;
 		}
 
-		if ($article_ids)
+		$users = $this->model('account')->get_user_info_by_uids($data_list_uids);
+		if (!$users)
 		{
-			$topic_infos['article'] = $this->model('topic')->get_topics_by_item_ids($article_ids, 'article');
-
-			$article_infos = $this->model('article')->get_article_info_by_ids($article_ids);
+			$users = array();
 		}
 
-		if ($video_ids)
-		{
-			$topic_infos['video'] = $this->model('topic')->get_topics_by_item_ids($video_ids, 'video');
-
-			$video_infos = $this->model('video')->get_video_info_by_ids($video_ids);
-		}
-
-		$users_info = $this->model('account')->get_user_info_by_uids($data_list_uids);
+		$push_reputation = S::get('push_reputation');
+		$category = (S::get('category_enable') != 'N');
 
 		foreach ($posts_index as $key => $data)
 		{
-			switch ($data['post_type'])
-			{
-				case 'question':
-					$explore_list_data[$key] = $question_infos[$data['post_id']];
-
-					$explore_list_data[$key]['answer_info'] = $last_answers[$data['post_id']];
-
-					if ($explore_list_data[$key]['answer_info'])
-					{
-						$explore_list_data[$key]['answer_info']['user_info'] = $users_info[$last_answers[$data['post_id']]['uid']];
-					}
-
-					break;
-
-				case 'article':
-					$explore_list_data[$key] = $article_infos[$data['post_id']];
-
-					break;
-
-				case 'video':
-					$explore_list_data[$key] = $video_infos[$data['post_id']];
-
-					break;
-
-			}
-
+			$explore_list_data[$key] = $info[$data['post_type']][$data['post_id']];
+			$explore_list_data[$key]['last_user_info'] = $users[$explore_list_data[$key]['last_uid']] ?? null;
+			$explore_list_data[$key]['user_info'] = $users[$data['uid']] ?? null;
 			$explore_list_data[$key]['post_type'] = $data['post_type'];
+			$explore_list_data[$key]['children_reputation'] = $data['reputation'];
 
-			if (get_setting('category_enable') == 'Y')
+			$explore_list_data[$key]['hot'] = intval(is_numeric($push_reputation) AND $explore_list_data[$key]['reputation'] >= $push_reputation);
+
+			if ($category)
 			{
-				$explore_list_data[$key]['category_info'] = $this->model('system')->get_category_info($data['category_id']);
+				$explore_list_data[$key]['category_info'] = $this->model('category')->get_category_info($data['category_id']);
 			}
-
-			$explore_list_data[$key]['topics'] = $topic_infos[$data['post_type']][$data['post_id']];
-
-			$explore_list_data[$key]['user_info'] = $users_info[$data['uid']];
 		}
 
 		return $explore_list_data;
 	}
 
-	public function get_posts_list_by_topic_ids($post_type, $topic_type, $topic_ids, $category_id = null, $answer_count = null, $order_by = 'post_id DESC', $is_recommend = false, $page = 1, $per_page = 10)
+	public function get_posts_list($post_type, $page = 1, $per_page = 10, $order_key = null, $category_id = null, $answer_count = null, $recommend = false)
 	{
-		if (!is_array($topic_ids))
+		if (!$order_key)
 		{
-			return false;
+			$order_key = 'sort DESC, update_time DESC';
 		}
 
-		array_walk_recursive($topic_ids, 'intval_string');
-
-		$result_cache_key = 'posts_list_by_topic_ids_' .  md5(implode(',', $topic_ids) . $answer_count . $category_id . $order_by . $is_recommend . $page . $per_page . $post_type . $topic_type);
-
-		$found_rows_cache_key = 'posts_list_by_topic_ids_found_rows_' . md5(implode(',', $topic_ids) . $answer_count . $category_id . $is_recommend . $per_page . $post_type . $topic_type);
-
-		$topic_relation_where[] = '`topic_id` IN(' . implode(',', $topic_ids) . ')';
-
-		if ($topic_type)
+		if (isset($answer_count))
 		{
-			$topic_relation_where[] = "`type` = '" . $this->quote($topic_type) . "'";
-		}
+			$answer_count = intval($answer_count);
 
-		if ($topic_relation_query = $this->query_all("SELECT `item_id`, `type` FROM " . get_table('topic_relation') . " WHERE " . implode(' AND ', $topic_relation_where)))
-		{
-			foreach ($topic_relation_query AS $key => $val)
-			{
-				$post_ids[$val['type']][$val['item_id']] = $val['item_id'];
-			}
-		}
-
-		if (!$post_ids)
-		{
-			return false;
-		}
-
-		foreach ($post_ids AS $key => $val)
-		{
-			$post_id_where[] = "(post_id IN (" . implode(',', $val) . ") AND post_type = '" . $this->quote($key) . "')";
-		}
-
-		if ($post_id_where)
-		{
-			$where[] = '(' . implode(' OR ', $post_id_where) . ')';
-		}
-
-		if (is_digits($answer_count))
-		{
 			if ($answer_count == 0)
 			{
-				$where[] = "answer_count = " . $answer_count;
+				$where[] = ['reply_count', 'eq', 0];
 			}
 			else if ($answer_count > 0)
 			{
-				$where[] = "answer_count >= " . $answer_count;
+				$where[] = ['reply_count', 'gte', $answer_count];
 			}
 		}
 
-		if ($is_recommend)
+		if ($recommend)
 		{
-			$where[] = 'is_recommend = 1';
-		}
-
-		if ($post_type)
-		{
-			$where[] = "post_type = '" . $this->quote($post_type) . "'";
+			$where[] = ['recommend', 'eq', 1];
 		}
 
 		if ($category_id)
 		{
-			$where[] = 'category_id IN(' . implode(',', $this->model('system')->get_category_with_child_ids('question', $category_id)) . ')';
+			$where[] = ['category_id', 'eq', $category_id, 'i'];
 		}
-
-		if (!$result = AWS_APP::cache()->get($result_cache_key))
+		else
 		{
-			if ($result = $this->fetch_page('posts_index', implode(' AND ', $where), $order_by, $page, $per_page))
-			{
-				AWS_APP::cache()->set($result_cache_key, $result, get_setting('cache_level_high'));
-			}
+			$where[] = ['category_id', 'in', $this->get_default_category_ids(), 'i'];
 		}
 
-		if (!$found_rows = AWS_APP::cache()->get($found_rows_cache_key))
+		if ($post_type AND $this->model('content')->check_thread_type($post_type))
 		{
-			if ($found_rows = $this->found_rows())
-			{
-				AWS_APP::cache()->set($found_rows_cache_key, $found_rows, get_setting('cache_level_high'));
-			}
+			$where[] = ['post_type', 'eq', $post_type];
 		}
 
-		$this->posts_list_total = $found_rows;
+		$posts_index = $this->fetch_page('posts_index', $where, $order_key, $page, $per_page);
 
-		return $result;
+		$this->posts_list_total = $this->total_rows();
+
+		return $this->process_explore_list_data($posts_index);
 	}
 
-	public function get_recommend_posts_by_topic_ids($topic_ids)
+	public function get_hot_posts($post_type, $category_id = 0, $day = 30, $page = 1, $per_page = 10)
 	{
-		if (!$topic_ids OR !is_array($topic_ids))
+		if ($day)
+		{
+			$add_time = strtotime('-' . $day . ' Day');
+			$where[] = ['add_time', 'gt', $add_time, 'i'];
+		}
+
+		if ($post_type AND $this->model('content')->check_thread_type($post_type))
+		{
+			$where[] = ['post_type', 'eq', $post_type];
+		}
+
+		if ($category_id)
+		{
+			$where[] = ['category_id', 'eq', $category_id, 'i'];
+		}
+
+		$posts_index = $this->fetch_page('posts_index', $where, 'reputation DESC', $page, $per_page);
+
+		$this->posts_list_total = $this->total_rows();
+
+		return $this->process_explore_list_data($posts_index);
+	}
+
+	public function get_posts_list_by_topic_ids($post_type, $topic_ids, $page = 1, $per_page = 10)
+	{
+		if (!is_array($topic_ids) OR count($topic_ids) < 1)
 		{
 			return false;
 		}
 
-		$related_topic_ids = array();
+		$topic_relation_where[] = ['topic_id', 'in', $topic_ids, 'i'];
 
-		foreach ($topic_ids AS $topic_id)
+		if ($post_type AND $this->model('content')->check_thread_type($post_type))
 		{
-			$related_topic_ids = array_merge($related_topic_ids, $this->model('topic')->get_related_topic_ids_by_id($topic_id));
+			$topic_relation_where[] = ['type', 'eq', $post_type];
 		}
 
-		if ($related_topic_ids)
+		$topic_relations = $this->fetch_page('topic_relation', $topic_relation_where, 'id DESC', $page, $per_page);
+		if ($topic_relations)
 		{
-			$recommend_posts = $this->model('posts')->get_posts_list(null, 1, 10, null, $related_topic_ids, null, null, 30, true);
+			foreach ($topic_relations AS $key => $val)
+			{
+				$info[$val['type']][$val['item_id']] = $val['item_id'];
+			}
+			$this->posts_list_total = $this->total_rows();
 		}
 
-		return $recommend_posts;
+		if (!$info)
+		{
+			return false;
+		}
+
+		foreach ($info AS $type => $ids)
+		{
+			$where[] = 'or';
+			$where[] = [['post_id', 'in', $ids, 'i'], ['post_type', 'eq', $type]];
+		}
+
+		$result = $this->fetch_all('posts_index', $where, 'update_time DESC');
+
+		return $this->process_explore_list_data($result);
 	}
 
-	public function bump_post($uid, $post_id, $post_type)
+	public function get_related_posts_by_topic_ids($post_type, $topic_ids, $exclude_post_id = 0, $limit = 10)
+	{
+		if (!$this->model('content')->check_thread_type($post_type) OR !is_array($topic_ids) OR count($topic_ids) < 1)
+		{
+			return false;
+		}
+
+		$merged_topics = $this->fetch_rows('topic_merge', ['source_id', 'target_id'], [
+			['target_id', 'in', $topic_ids, 'i'],
+			'or',
+			['source_id', 'in', $topic_ids, 'i']
+		]);
+		if ($merged_topics)
+		{
+			foreach ($merged_topics as $val)
+			{
+				$topic_ids[] = $val['source_id'];
+				$topic_ids[] = $val['target_id'];
+			}
+			$topic_ids = array_unique($topic_ids);
+		}
+
+		$topic_relation_where[] = ['topic_id', 'in', $topic_ids, 'i'];
+		$topic_relation_where[] = ['type', 'eq', $post_type];
+
+		$post_ids = $this->fetch_column('topic_relation', 'item_id', $topic_relation_where, 'RAND()', 200);
+		if (!$post_ids)
+		{
+			return false;
+		}
+		$post_ids = array_unique($post_ids);
+
+		$where = [
+			['post_id', 'notEq', $exclude_post_id, 'i'],
+			['post_id', 'in', $post_ids, 'i'],
+			['post_type', 'eq', $post_type],
+			['category_id', 'in', $this->get_default_category_ids(), 'i'],
+		];
+		$result = $this->fetch_all('posts_index', $where, 'RAND()', $limit);
+
+		return $this->process_explore_list_data($result);
+	}
+
+	public function get_recommended_posts($exclude_post_type, $exclude_post_id, $limit = 10)
+	{
+		$where = [
+			['recommend', 'eq', 1],
+			['category_id', 'in', $this->get_default_category_ids(), 'i'],
+			[
+				['post_type', 'notEq', $exclude_post_type, 's'],
+				'or',
+				['post_id', 'notEq', $exclude_post_id, 'i']
+			]
+		];
+		$result = $this->fetch_all('posts_index', $where, 'RAND()', $limit);
+
+		return $this->process_explore_list_data($result);
+	}
+
+	public function bring_to_top($post_id, $post_type)
 	{
 		$post_id = intval($post_id);
 
-		$where = "post_id = " . ($post_id) . " AND post_type = '" . $this->quote($post_type) . "'";
+		$where = [['post_id', 'eq', $post_id, 'i'], ['post_type', 'eq', $post_type]];
 
 		$this->update('posts_index', array(
-			'update_time' => $this->get_last_update_time()
+			'update_time' => $this->get_last_update_time() + 1
 		), $where);
-
-		switch ($post_type)
-		{
-			case 'question':
-				$this->model('question')->log($post_id, 'QUESTION', '提升问题', $uid);
-				break;
-
-			case 'article':
-				$this->model('article')->log($post_id, 'ARTICLE', '提升文章', $uid);
-				break;
-
-			case 'video':
-				$this->model('video')->log($post_id, 'VIDEO', '提升投稿', $uid);
-				break;
-		}
-
-		return true;
-	}
-
-	public function sink_post($uid, $post_id, $post_type)
-	{
-		$post_id = intval($post_id);
-
-		$where = "post_id = " . ($post_id) . " AND post_type = '" . $this->quote($post_type) . "'";
-
-		$this->update('posts_index', array(
-			'update_time' => $this->get_last_update_time() - (7 * 24 * 3600)
-		), $where);
-
-		switch ($post_type)
-		{
-			case 'question':
-				$this->model('question')->log($post_id, 'QUESTION', '下沉问题', $uid);
-				break;
-
-			case 'article':
-				$this->model('article')->log($post_id, 'ARTICLE', '下沉文章', $uid);
-				break;
-
-			case 'video':
-				$this->model('video')->log($post_id, 'VIDEO', '下沉投稿', $uid);
-				break;
-		}
 
 		return true;
 	}

@@ -1,18 +1,9 @@
 <div class="aw-footer">
-    <p>Copyright &copy; <?php echo date('Y'); ?> - Powered By Pincong Center <?php echo G_DISPLAY_VERSION; ?></p>
+	<p>Copyright &copy; <?php echo date('Y'); ?> - Powered By Pincong Center <?php echo G_DISPLAY_VERSION; ?></p>
 </div>
 
 <!-- DO NOT REMOVE -->
 <div id="aw-ajax-box" class="aw-ajax-box"></div>
-
-<?php if (!$this->user_info['permission']['is_administrator']) { ?>
-<script type="text/javascript">
-$(function()
-{
-    $('.mod-bar .icon-setting, .mod-bar .icon-signup, .mod-bar .icon-job').hide();
-})
-</script>
-<?php } ?>
 
 <div style="display:none;" id="__crond">
 	<script type="text/javascript">
@@ -23,7 +14,7 @@ $(function()
 	</script>
 </div>
 
-<?php TPL::output('global/debuger.tpl.htm'); ?>
+<?php TPL::include('global/debuger.tpl.htm'); ?>
 <!-- / DO NOT REMOVE -->
 
 </body>

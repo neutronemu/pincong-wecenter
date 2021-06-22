@@ -2,53 +2,56 @@
 <html>
 <head>
 <meta content="text/html; charset=utf-8" http-equiv="Content-Type" />
+<?php echo S::get('custom_head_top'); ?>
 <meta content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" name="viewport" />
 <meta http-equiv="X-UA-Compatible" content="IE=edge" />
-<meta name="referrer" content="never" />
-<meta name="referrer" content="no-referrer" />
 <meta name="renderer" content="webkit" />
 <title><?php echo $this->page_title; ?></title>
-<meta name="keywords" content="<?php echo $this->_meta_keywords; ?>" />
-<meta name="description" content="<?php echo $this->_meta_description; ?>" />
-<base href="<?php echo base_url();?>/<?php if (get_setting('url_rewrite_enable') != 'Y') { ?><?php echo G_INDEX_SCRIPT; ?><?php } ?>" /><!--[if IE]></base><![endif]-->
-<link href="/favicon.ico" rel="shortcut icon" type="image/x-icon" />
+<meta name="keywords" content="<?php echo FORMAT::text($this->_meta_keywords); ?>" />
+<meta name="description" content="<?php echo FORMAT::text($this->_meta_description); ?>" />
+<base href="<?php echo url_rewrite('/'); ?>" /><!--[if IE]></base><![endif]-->
+<link href="<?php echo base_url(); ?>/favicon.ico" rel="shortcut icon" type="image/x-icon" />
 
-<link rel="stylesheet" type="text/css" href="<?php echo G_STATIC_URL; ?>/css/bootstrap.css" />
-<link rel="stylesheet" type="text/css" href="<?php echo G_STATIC_URL; ?>/css/icon.css" />
-
-<?php if (is_array($this->_import_css_files)) { ?>
-<?php foreach ($this->_import_css_files AS $import_css) { ?>
-<link href="<?php echo $import_css; ?>?v=<?php echo G_DISPLAY_VERSION_BUILD; ?>" rel="stylesheet" type="text/css" />
-<?php } ?>
-<?php } ?>
+<link rel="stylesheet" href="<?php echo G_STATIC_URL; ?>/css/bootstrap.css" />
+<link rel="stylesheet" href="<?php echo G_STATIC_URL; ?>/css/icon.css" />
+<link rel="stylesheet" href="<?php echo G_STATIC_URL; ?>/css/default/common.css?v=<?php echo G_DISPLAY_VERSION_BUILD; ?>" />
 
 <?php if ($this->template_name != 'default') { ?>
-<link href="<?php echo G_STATIC_URL; ?>/css/<?php echo $this->template_name; ?>/<?php echo $this->template_name; ?>.css" rel="stylesheet" type="text/css" />
+<link rel="stylesheet" href="<?php echo G_STATIC_URL; ?>/css/<?php echo $this->template_name; ?>/<?php echo $this->template_name; ?>.css" />
 <?php } ?>
 
-<?php $post_hash_var_name = strtoupper(md5(TIMESTAMP . $this->userinfo['salt'])); ?>
+<?php if (S::get('custom_css')) { ?>
+<style>
+<?php echo S::get('custom_css'); ?>
+</style>
+<?php } ?>
+
+<script src="<?php echo G_STATIC_URL; ?>/libs/jquery/3.6.0/jquery.min.js"></script>
+<script src="<?php echo G_STATIC_URL; ?>/js/bootstrap.js"></script>
+<script src="<?php echo G_STATIC_URL; ?>/js/jquery.cookie.js"></script>
+<script src="<?php echo G_STATIC_URL; ?>/js/autosize.js"></script>
+<script src="<?php echo G_STATIC_URL; ?>/js/hogan.js"></script>
+<script src="<?php echo G_STATIC_URL; ?>/js/aws_legacy.js?v=<?php echo G_DISPLAY_VERSION_BUILD; ?>"></script>
+
 <script type="text/javascript">
-	var _<?php echo $post_hash_var_name; ?>="<?php echo new_post_hash(); ?>";
-	var G_POST_HASH=_<?php echo $post_hash_var_name; ?>;
-	var G_INDEX_SCRIPT = "<?php if (get_setting('url_rewrite_enable') != 'Y') echo G_INDEX_SCRIPT; ?>";
-	var G_SITE_NAME = "<?php echo addcslashes(get_setting('site_name'), '\"'); ?>";
-	var G_BASE_URL = "<?php echo base_url(); if (get_setting('url_rewrite_enable') != 'Y') { ?>/<?php echo rtrim(G_INDEX_SCRIPT, '/'); } ?>";
+	var G_BASE_URL = "<?php echo url_rewrite(); ?>";
 	var G_STATIC_URL = "<?php echo G_STATIC_URL; ?>";
-	var G_UPLOAD_URL = "<?php echo get_setting('upload_url'); ?>";
+<?php if ($this->user_id) { ?>
 	var G_USER_ID = "<?php echo $this->user_id; ?>";
-	var G_USER_NAME = "<?php echo addcslashes(UF::name($this->user_info), '\"'); ?>";
+	var G_REPUTATION = "<?php echo intval($this->user_info['reputation']); ?>";
+	var G_FLAGGED = "<?php echo $this->user_info['flagged']; ?>";
+<?php } else { ?>
+	var G_USER_ID = "";
+	var G_REPUTATION = "";
+	var G_FLAGGED = "";
+<?php } ?>
 	var G_UNREAD_NOTIFICATION = 0;
-	var G_NOTIFICATION_INTERVAL = <?php echo intval(get_setting('unread_flush_interval')) * 1000; ?>;
-	var G_CAN_CREATE_TOPIC = "<?php echo $this->user_info['permission']['create_topic']; ?>";
-	var G_ADVANCED_EDITOR_ENABLE = "<?php echo get_setting('advanced_editor_enable'); ?>";
+	var G_NOTIFICATION_INTERVAL = <?php echo S::get_int('unread_flush_interval') * 1000; ?>;
 </script>
-<?php if (is_array($this->_import_js_files)) { ?>
-<?php foreach ($this->_import_js_files AS $import_js) { ?>
-<script src="<?php echo $import_js; ?>?v=<?php echo G_DISPLAY_VERSION_BUILD; ?>" type="text/javascript"></script>
-<?php } ?>
-<?php } ?>
-<script type="text/javascript" src="<?php echo G_STATIC_URL; ?>/js/compatibility.js"></script>
-<!--[if lte IE 8]>
-	<script type="text/javascript" src="<?php echo G_STATIC_URL; ?>/js/respond.js"></script>
-<![endif]-->
+
+<script src="<?php echo G_STATIC_URL; ?>/js/app.js?v=<?php echo G_DISPLAY_VERSION_BUILD; ?>"></script>
+
+<?php echo S::get('custom_head'); ?>
+
+<?php echo S::get('custom_head_bottom'); ?>
 </head>

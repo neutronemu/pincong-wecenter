@@ -31,72 +31,26 @@ class menu_class extends AWS_MODEL
 			'type_id' => $type_id,
 			'link' => $link,
 			'icon' => '',
-			'sort' => 99,
+			'sort' => 0
 		));
-	}
-
-	public function process_child_menu_links($data, $app)
-	{
-		if (!$data)
-		{
-			return false;
-		}
-
-		switch ($app)
-		{
-			case 'explore':
-				$url_prefix = '';
-			break;
-
-			case 'article':
-				$url_prefix = 'article/';
-			break;
-		}
-
-		foreach ($data AS $key => $val)
-		{
-			if (!$val['url_token'])
-			{
-				$val['url_token'] = $val['id'];
-			}
-
-			{
-				$data[$key]['link'] = $url_prefix . 'category-' . $val['url_token'];
-			}
-
-			$data[$key]['child'] = $this->process_child_menu_links($this->model('system')->fetch_category($val['type'], $val['id']), $app);
-		}
-
-		return $data;
 	}
 
 	public function get_nav_menu_list($app = null)
 	{
 		if (!$nav_menu_data = AWS_APP::cache()->get('nav_menu_list'))
 		{
-			$nav_menu_data = $this->fetch_all('nav_menu', null, 'sort ASC');
+			$nav_menu_data = $this->fetch_all('nav_menu', null, 'sort DESC');
 
-			AWS_APP::cache()->set('nav_menu_list', $nav_menu_data, get_setting('cache_level_low'), 'nav_menu');
+			AWS_APP::cache()->set('nav_menu_list', $nav_menu_data, S::get('cache_level_low'), 'nav_menu');
 		}
 
 		if ($nav_menu_data)
 		{
-			$category_info = $this->model('system')->get_category_list('question');
+			$category_info = $this->model('category')->get_category_list();
 
-			switch ($app)
+			if ($app)
 			{
-				case 'explore':
-					$url_prefix = 'explore/';
-					break;
-
-				case 'question':
-					$url_prefix = 'question/';
-					break;
-
-				case 'article':
-					$url_prefix = 'article/';
-					break;
-
+				$url_prefix = url_rewrite('/') . $app . '/';
 			}
 
 			foreach ($nav_menu_data as $key => $val)
@@ -104,11 +58,9 @@ class menu_class extends AWS_MODEL
 				switch ($val['type'])
 				{
 					case 'category':
-						{
-							$nav_menu_data[$key]['link'] = $url_prefix . 'category-' . $category_info[$val['type_id']]['url_token'];
-
-							$nav_menu_data[$key]['child'] = $this->process_child_menu_links($this->model('system')->fetch_category($category_info[$val['type_id']]['type'], $val['type_id']), $app);
-						}
+					{
+						$nav_menu_data[$key]['link'] = $url_prefix . 'category-' . $category_info[$val['type_id']]['id'];
+					}
 					break;
 				}
 
@@ -127,13 +79,13 @@ class menu_class extends AWS_MODEL
 	{
 		AWS_APP::cache()->cleanGroup('nav_menu');
 
-		return $this->update('nav_menu', $data, 'id = ' . intval($nav_menu_id));
+		return $this->update('nav_menu', $data, ['id', 'eq', $nav_menu_id, 'i']);
 	}
 
 	public function remove_nav_menu($nav_menu_id)
 	{
 		AWS_APP::cache()->cleanGroup('nav_menu');
 
-		return $this->delete('nav_menu', 'id = ' . intval($nav_menu_id));
+		return $this->delete('nav_menu', ['id', 'eq', $nav_menu_id, 'i']);
 	}
 }

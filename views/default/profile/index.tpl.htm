@@ -1,0 +1,94 @@
+<?php TPL::include('global/header.tpl.htm'); ?>
+<?php TPL::include('profile/profile_header.tpl.htm'); ?>
+
+<div class="aw-mod">
+	<div class="mod-body">
+		<form id="setting_form" method="post" action="<?php echo url_rewrite(); ?>/profile/ajax/profile_setting/">
+		<!-- 基本信息 -->
+		<div class="aw-mod mod-base">
+			<div class="mod-head">
+				<h3><?php echo _t('基本信息'); ?></h3>
+			</div>
+			<div class="mod-body">
+				<dl>
+					<dt><?php echo _t('用户名'); ?>:</dt>
+					<dd>
+						<input class="form-control" type="text" name="user_name" value="<?php echo UF::name($this->user_info); ?>" />
+						<p class="aw-small-text"><?php echo _t('修改用户名需要支付 %s0 %s1', array(-S::get_int('currency_system_config_change_username'), S::get('currency_unit'))); ?></p>
+					</dd>
+				</dl>
+				<dl>
+					<dt><?php echo _t('性别'); ?>:</dt>
+					<dd>
+						<label>
+							<input name="sex" id="sex" value="0" type="radio"<?php if (!$this->user_info['sex']) { ?> checked="checked"<?php } ?> /> <?php echo _t('保密'); ?>
+						</label>
+						<label>
+							<input name="sex" id="sex" value="1" type="radio"<?php if ($this->user_info['sex'] == 1) { ?> checked="checked"<?php } ?> /> <?php echo _t('男'); ?>
+						</label>
+						<label>
+							<input name="sex" id="sex" value="2" type="radio"<?php if ($this->user_info['sex'] == 2) { ?> checked="checked"<?php } ?> /> <?php echo _t('女'); ?>
+						</label>
+						<label>
+							<input name="sex" id="sex" value="3" type="radio"<?php if ($this->user_info['sex'] == 3) { ?> checked="checked"<?php } ?> /> <?php echo _t('其他'); ?>
+						</label>
+					</dd>
+				</dl>
+				<dl>
+					<dt><?php echo _t('介绍'); ?>:</dt>
+					<dd>
+						<input class="form-control" name="signature" type="text" value="<?php echo FORMAT::text($this->user_info['signature']); ?>" />
+					</dd>
+				</dl>
+
+				<dl>
+					<dt><label><?php echo _t('时区'); ?>:</label></dt>
+					<dd>
+						<select name="default_timezone">
+							<option value=""><?php echo _t('使用网站预设时区'); ?></option>
+							<?php $timezone_identifiers = timezone_identifiers_list(); ?>
+							<?php foreach ($timezone_identifiers as $val) { ?>
+							<option value="<?php echo $val; ?>" <?php if ($this->user_info['default_timezone'] == $val) { ?> selected="selected"<?php } ?>><?php echo $val; ?></option>
+							<?php } ?>
+						</select>
+					</dd>
+				</dl>
+				<!-- 上传头像 -->
+				<div class="side-bar">
+					<dl>
+						<dt class="pull-left"><img class="aw-border-radius-5" src="<?php echo UF::avatar($this->user_info, 'max'); ?>" alt="" id="avatar_src" /></dt>
+						<dd class="pull-left">
+							<h5><?php echo _t('头像设置'); ?></h5>
+							<p><?php echo _t('最大 %s KB', S::get_int('upload_size_limit')); ?></p>
+							<a class="btn btn-mini btn-success" id="avatar_uploader" href="javascript:;"><?php echo _t('上传头像'); ?></a>
+							<br />
+							<span id="avatar_uploading_status" class="collapse"><i class="aw-loading"></i> <?php echo _t('文件上传中...'); ?></span>
+						</dd>
+					</dl>
+				</div>
+				<!-- end 上传头像 -->
+			</div>
+		</div>
+		<!-- end 基本信息 -->
+		</form>
+	</div>
+	<div class="mod-footer clearfix">
+		<a href="javascript:;" class="btn btn-large btn-success pull-right" onclick="AWS.submit_form($('#setting_form'), $(this));"><?php echo _t('保存'); ?></a>
+	</div>
+</div>
+
+<script type="text/javascript" src="<?php echo G_STATIC_URL; ?>/js/imageuploader.js"></script>
+<script type="text/javascript">
+$(document).ready(function () {
+	new ImageUploader({
+		url: G_BASE_URL + '/profile/ajax/avatar_upload/',
+		field_name: 'aws_upload_file',
+		upload_button: $('#avatar_uploader'),
+		image_container: $('#avatar_src'),
+		loading_status: $('#avatar_uploading_status')
+	});
+});
+</script>
+
+<?php TPL::include('profile/profile_footer.tpl.htm'); ?>
+<?php TPL::include('global/footer.tpl.htm'); ?>

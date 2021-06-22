@@ -20,14 +20,27 @@ if (!defined('IN_ANWSION'))
 
 class favorite_class extends AWS_MODEL
 {
+	public function check_item_type($type)
+	{
+		switch ($type)
+		{
+			case 'question_reply':
+			case 'question':
+			case 'article':
+			case 'video':
+				return true;
+		}
+		return false;
+	}
+
 	public function add_favorite($item_id, $item_type, $uid)
 	{
-		if (!$item_id OR !$item_type)
+		if (!$item_id OR !$uid OR !$this->check_item_type($item_type))
 		{
 			return false;
 		}
 
-		if (!$this->fetch_one('favorite', 'id', "type = '" . $this->quote($item_type) . "' AND item_id = " . intval($item_id) . ' AND uid = ' . intval($uid)))
+		if (!$this->fetch_one('favorite', 'id', [['type', 'eq', $item_type], ['item_id', 'eq', $item_id, 'i'], ['uid', 'eq', $uid, 'i']]))
 		{
 			return $this->insert('favorite', array(
 				'item_id' => intval($item_id),
@@ -40,36 +53,33 @@ class favorite_class extends AWS_MODEL
 
 	public function remove_favorite_item($item_id, $item_type, $uid)
 	{
-		if (!$item_id OR !$item_type OR !$uid)
+		if (!$item_id OR !$uid OR !$this->check_item_type($item_type))
 		{
 			return false;
 		}
 
-		$this->delete('favorite', "item_id = " . intval($item_id) . " AND `type` = '" . $this->quote($item_type) . "' AND uid = " . intval($uid));
+		$this->delete('favorite', [['type', 'eq', $item_type], ['item_id', 'eq', $item_id, 'i'], ['uid', 'eq', $uid, 'i']]);
 	}
 
-	public function count_favorite_items($uid, $tag = null)
+	public function count_favorite_items($uid)
 	{
-		{
-			return $this->count('favorite', 'uid = ' . intval($uid));
-		}
+		return $this->count('favorite', ['uid', 'eq', $uid, 'i']);
 	}
 
-	public function get_item_list($tag, $uid, $limit)
+	public function get_item_list($uid, $page, $per_page)
 	{
 		if (!$uid)
 		{
 			return false;
 		}
 
-		{
-			$favorite_items = $this->fetch_all('favorite', "uid = " . intval($uid), 'item_id DESC', $limit);
-		}
+		$favorite_items = $this->fetch_page('favorite', ['uid', 'eq', $uid, 'i'], 'item_id DESC', $page, $per_page);
 
-		return $this->process_list_data($favorite_items);
+		$this->process_list_data($favorite_items);
+		return $favorite_items;
 	}
 
-	public function process_list_data($favorite_items)
+	private function process_list_data(&$favorite_items)
 	{
 		if (!$favorite_items)
 		{
@@ -80,36 +90,64 @@ class favorite_class extends AWS_MODEL
 		{
 			switch ($data['type'])
 			{
-				case 'answer':
+				case 'question_reply':
 					$answer_ids[] = $data['item_id'];
+				break;
+
+				case 'question':
+					$question_ids[] = $data['item_id'];
 				break;
 
 				case 'article':
 					$article_ids[] = $data['item_id'];
+				break;
+
+				case 'video':
+					$video_ids[] = $data['item_id'];
 				break;
 			}
 		}
 
 		if ($answer_ids)
 		{
-			if ($answer_infos = $this->model('answer')->get_answers_by_ids($answer_ids))
+			if ($answer_infos = $this->model('content')->get_posts_by_ids('question_reply', $answer_ids))
 			{
 				foreach ($answer_infos AS $key => $data)
 				{
-					$question_ids[$data['question_id']] = $data['question_id'];
+					$question_ids[$data['parent_id']] = $data['parent_id'];
 
 					$favorite_uids[$data['uid']] = $data['uid'];
 				}
+			}
+		}
 
-				$question_infos = $this->model('question')->get_question_info_by_ids($question_ids);
+		if ($question_ids)
+		{
+			if ($question_infos = $this->model('content')->get_posts_by_ids('question', $question_ids))
+			{
+				foreach ($question_infos AS $key => $data)
+				{
+					$favorite_uids[$data['uid']] = $data['uid'];
+				}
 			}
 		}
 
 		if ($article_ids)
 		{
-			if ($article_infos = $this->model('article')->get_article_info_by_ids($article_ids))
+			if ($article_infos = $this->model('content')->get_posts_by_ids('article', $article_ids))
 			{
 				foreach ($article_infos AS $key => $data)
+				{
+					$favorite_uids[$data['uid']] = $data['uid'];
+				}
+			}
+		}
+
+		if ($video_ids)
+		{
+			if ($video_infos = $this->model('content')->get_posts_by_ids('video', $video_ids))
+			{
+				foreach ($video_infos AS $key => $data)
 				{
 					$favorite_uids[$data['uid']] = $data['uid'];
 				}
@@ -122,34 +160,29 @@ class favorite_class extends AWS_MODEL
 		{
 			switch ($data['type'])
 			{
-				case 'answer':
-					$favorite_list_data[$key]['title'] = $question_infos[$answer_infos[$data['item_id']]['question_id']]['question_content'];
-					$favorite_list_data[$key]['link'] = get_js_url('/question/' . $answer_infos[$data['item_id']]['question_id'] . '?rf=false&item_id=' . $data['item_id'] . '#!answer_' . $data['item_id']);
-					$favorite_list_data[$key]['add_time'] = $question_infos[$answer_infos[$data['item_id']]['question_id']]['add_time'];
+				case 'question_reply':
+					$favorite_items[$key]['item'] = $answer_infos[$data['item_id']];
+					$favorite_items[$key]['user_info'] = $users_info[$answer_infos[$data['item_id']]['uid']];
+					$favorite_items[$key]['item']['question_info'] = $question_infos[$answer_infos[$data['item_id']]['parent_id']];
+				break;
 
-					$favorite_list_data[$key]['answer_info'] = $answer_infos[$data['item_id']];
-
-					$favorite_list_data[$key]['question_info'] = $question_infos[$answer_infos[$data['item_id']]['question_id']];
-					$favorite_list_data[$key]['user_info'] = $users_info[$answer_infos[$data['item_id']]['uid']];
+				case 'question':
+					$favorite_items[$key]['item'] = $question_infos[$data['item_id']];
+					$favorite_items[$key]['user_info'] = $users_info[$question_infos[$data['item_id']]['uid']];
 				break;
 
 				case 'article':
-					$favorite_list_data[$key]['title'] = $article_infos[$data['item_id']]['title'];
-					$favorite_list_data[$key]['link'] = get_js_url('/article/' . $data['item_id']);
-					$favorite_list_data[$key]['add_time'] = $article_infos[$data['item_id']]['add_time'];
+					$favorite_items[$key]['item'] = $article_infos[$data['item_id']];
+					$favorite_items[$key]['user_info'] = $users_info[$article_infos[$data['item_id']]['uid']];
+				break;
 
-					$favorite_list_data[$key]['article_info'] = $article_infos[$data['item_id']];
-
-					$favorite_list_data[$key]['last_action_str'] = ACTION_LOG::format_action_data(ACTION_LOG::ADD_ARTICLE, $data['uid'], $users_info[$data['uid']]['user_name']);
-
-					$favorite_list_data[$key]['user_info'] = $users_info[$article_infos[$data['item_id']]['uid']];
+				case 'video':
+					$favorite_items[$key]['item'] = $video_infos[$data['item_id']];
+					$favorite_items[$key]['user_info'] = $users_info[$video_infos[$data['item_id']]['uid']];
 				break;
 			}
-
-			$favorite_list_data[$key]['item_id'] = $data['item_id'];
-			$favorite_list_data[$key]['item_type'] = $data['type'];
 		}
 
-		return $favorite_list_data;
+		return true;
 	}
 }

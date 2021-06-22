@@ -14,16 +14,23 @@
 
 class UF
 {
-	// 获取头像地址
-	// 举个例子：$uid=12345，那么头像路径很可能(根据您部署的上传文件夹而定)会被存储为/uploads/000/01/23/45_avatar_min.jpg
-	public static function avatar(&$user_info, $size = 'min', $show_forbidden = true)
+	private static $permissions;
+
+	public static function set_permissions($val)
+	{
+		self::$permissions = $val;
+	}
+
+	// 获取头像网址
+	// 举个例子：$uid=12345，那么头像网址很可能(根据您部署的上传文件夹而定)为 /uploads/000/01/23/45_avatar_min.jpg?random_string
+	public static function avatar($user_info, $size = 'min')
 	{
 		$all_size = array('min', 'mid', 'max');
 		$size = in_array($size, $all_size) ? $size : $all_size[0];
 
 		$default = G_STATIC_URL . '/common/avatar-' . $size . '-img.png';
 
-		if (!$user_info OR (!$show_forbidden AND $user_info['forbidden']))
+		if (!$user_info OR is_null($user_info['avatar_file']) OR (!self::$permissions['is_moderator'] AND $user_info['forbidden'] > 1))
 		{
 			return $default;
 		}
@@ -33,43 +40,68 @@ class UF
 		$dir2 = substr($uid, 3, 2);
 		$dir3 = substr($uid, 5, 2);
 
-		$path = get_setting('upload_dir') . '/avatar/' . $dir1 . '/' . $dir2 . '/' . $dir3 . '/' . substr($uid, - 2) . '_avatar_' . $size . '.jpg';
+		$filename = '/avatar/' . $dir1 . '/' . $dir2 . '/' . $dir3 . '/' . substr($uid, - 2) . '_avatar_' . $size . '.jpg';
+		return S::get('upload_url') . $filename . '?' . $user_info['avatar_file']; // $user_info['avatar_file'] 随机字符串用于避免 CDN 缓存
 
-		if (file_exists($path))
-		{
-			return $path;
-		}
-		else
-		{
-			return $default;
-		}
+		//$path = S::get('upload_dir') . $filename;
+
+		//if (file_exists($path))
+		//{
+		//	return S::get('upload_url') . $filename . '?' . $user_info['avatar_file']; // $user_info['avatar_file'] 随机字符串用于避免 CDN 缓存
+		//}
+		//else
+		//{
+		//	return $default;
+		//}
 	}
 
-	public static function signature(&$user_info, $show_forbidden = true)
+	public static function signature($user_info)
 	{
-		if (!$user_info OR (!$show_forbidden AND $user_info['forbidden']))
+		if (!$user_info OR (!self::$permissions['is_moderator'] AND $user_info['forbidden'] > 1))
 		{
 			return '';
 		}
-		return $user_info['signature'];
+		return FORMAT::text($user_info['signature'], true);
 	}
 
-	public static function name(&$user_info)
+	public static function name($user_info)
 	{
 		if (!$user_info)
 		{
-			return AWS_APP::lang()->_t('匿名用户');
+			return _t('[已注销]');
 		}
-		return $user_info['user_name'];
+		return FORMAT::text($user_info['user_name']);
 	}
 
-	public static function url(&$user_info)
+	public static function url($user_info)
 	{
 		if (!$user_info)
 		{
 			return 'javascript:;';
 		}
-		return 'people/' . $user_info['url_token'];
+		return url_rewrite('/people/') . safe_url_encode($user_info['user_name']);
+	}
+
+	public static function reputation($user_info)
+	{
+		if (!$user_info)
+		{
+			return 0;
+		}
+		if (self::$permissions['is_moderator'])
+		{
+			return $user_info['reputation'];
+		}
+		return intval($user_info['reputation']);
+	}
+
+	public static function flagged($user_info)
+	{
+		if (!$user_info OR !$user_info['flagged'])
+		{
+			return '';
+		}
+		return get_user_group_name_flagged($user_info['flagged']);
 	}
 
 }

@@ -22,7 +22,7 @@
 /**
  * @see Zend_Config
  */
-//require_once 'Zend/Config.php';
+require_once 'Zend/Config.php';
 
 /**
  * YAML Adapter for Zend_Config
@@ -99,7 +99,7 @@ class Zend_Config_Yaml extends Zend_Config
     public function setYamlDecoder($yamlDecoder)
     {
         if (!is_callable($yamlDecoder)) {
-            //require_once 'Zend/Config/Exception.php';
+            require_once 'Zend/Config/Exception.php';
             throw new Zend_Config_Exception('Invalid parameter to setYamlDecoder() - must be callable');
         }
 
@@ -131,7 +131,7 @@ class Zend_Config_Yaml extends Zend_Config
     public function __construct($yaml, $section = null, $options = false)
     {
         if (empty($yaml)) {
-            //require_once 'Zend/Config/Exception.php';
+            require_once 'Zend/Config/Exception.php';
             throw new Zend_Config_Exception('Filename is not set');
         }
 
@@ -171,7 +171,7 @@ class Zend_Config_Yaml extends Zend_Config
 
         // Check if there was a error while loading file
         if ($this->_loadFileErrorStr !== null) {
-            //require_once 'Zend/Config/Exception.php';
+            require_once 'Zend/Config/Exception.php';
             throw new Zend_Config_Exception($this->_loadFileErrorStr);
         }
 
@@ -186,7 +186,7 @@ class Zend_Config_Yaml extends Zend_Config
 
         if (null === $config) {
             // decode failed
-            //require_once 'Zend/Config/Exception.php';
+            require_once 'Zend/Config/Exception.php';
             throw new Zend_Config_Exception("Error parsing YAML data");
         }
 
@@ -200,9 +200,9 @@ class Zend_Config_Yaml extends Zend_Config
             $dataArray = array();
             foreach ($section as $sectionName) {
                 if (!isset($config[$sectionName])) {
-                    //require_once 'Zend/Config/Exception.php';
+                    require_once 'Zend/Config/Exception.php';
                     throw new Zend_Config_Exception(sprintf(
-                        'Section "%s" cannot be found', 
+                        'Section "%s" cannot be found',
                         implode(' ', (array)$section)
                     ));
                 }
@@ -212,9 +212,9 @@ class Zend_Config_Yaml extends Zend_Config
             parent::__construct($dataArray, $allowModifications);
         } else {
             if (!isset($config[$section])) {
-                //require_once 'Zend/Config/Exception.php';
+                require_once 'Zend/Config/Exception.php';
                 throw new Zend_Config_Exception(sprintf(
-                    'Section "%s" cannot be found', 
+                    'Section "%s" cannot be found',
                     implode(' ', (array)$section)
                 ));
             }
@@ -243,7 +243,7 @@ class Zend_Config_Yaml extends Zend_Config
     protected function _processExtends(array $data, $section, array $config = array())
     {
         if (!isset($data[$section])) {
-            //require_once 'Zend/Config/Exception.php';
+            require_once 'Zend/Config/Exception.php';
             throw new Zend_Config_Exception(sprintf('Section "%s" cannot be found', $section));
         }
 
@@ -289,7 +289,7 @@ class Zend_Config_Yaml extends Zend_Config
     {
         $config   = array();
         $inIndent = false;
-        while (list($n, $line) = each($lines)) {
+        foreach ($line as $n => $line) {
             $lineno = $n + 1;
 
             $line = rtrim(preg_replace("/#.*$/", "", $line));
@@ -341,7 +341,7 @@ class Zend_Config_Yaml extends Zend_Config
                     $config[] = self::_decodeYaml($currentIndent + 1, $lines);
                 }
             } else {
-                //require_once 'Zend/Config/Exception.php';
+                require_once 'Zend/Config/Exception.php';
                 throw new Zend_Config_Exception(sprintf(
                     'Error parsing YAML at line %d - unsupported syntax: "%s"',
                     $lineno, $line
@@ -362,11 +362,11 @@ class Zend_Config_Yaml extends Zend_Config
         $value = trim($value);
 
         // remove quotes from string.
-        if ('"' == $value['0']) {
-            if ('"' == $value[count($value) -1]) {
+        if ('"' == substr($value, 0, 1)) {
+            if ('"' == substr($value, -1)) {
                 $value = substr($value, 1, -1);
             }
-        } elseif ('\'' == $value['0'] && '\'' == $value[count($value) -1]) {
+        } elseif ('\'' == substr($value, 0, 1) && '\'' == substr($value, -1)) {
             $value = strtr($value, array("''" => "'", "'" => ''));
         }
 

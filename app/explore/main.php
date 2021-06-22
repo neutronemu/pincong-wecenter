@@ -22,46 +22,35 @@ class main extends AWS_CONTROLLER
 {
 	public function get_access_rule()
 	{
-		$rule_action['rule_type'] = "white"; //'black'黑名单,黑名单中的检查  'white'白名单,白名单以外的检查
+		$rule_action['rule_type'] = "white";
 
-		if ($this->user_info['permission']['visit_explore'] AND $this->user_info['permission']['visit_site'])
+		if ($this->user_info['permission']['visit_site'])
 		{
-			$rule_action['actions'][] = 'index';
+			$rule_action['actions'] = array(
+				'index'
+			);
 		}
 
 		return $rule_action;
 	}
-	
-	public function setup()
-	{
-
-	}
 
 	public function index_action()
 	{
-
 		if ($this->user_id)
 		{
-			$this->crumb(AWS_APP::lang()->_t('发现'), '/explore');
+			$this->crumb(_t('发现'));
 		}
 
-		if ($_GET['category'])
+		if (H::GET('category'))
 		{
-			if (is_digits($_GET['category']))
-			{
-				$category_info = $this->model('system')->get_category_info($_GET['category']);
-			}
-			else
-			{
-				$category_info = $this->model('system')->get_category_info_by_url_token($_GET['category']);
-			}
+			$category_info = $this->model('category')->get_category_info(H::GET('category'));
 		}
 
 		if ($category_info)
 		{
 			TPL::assign('category_info', $category_info);
 
-			$this->crumb($category_info['title'], '/category-' . $category_info['id']);
+			$this->crumb($category_info['title']);
 
 			$meta_description = $category_info['title'];
 
@@ -74,68 +63,113 @@ class main extends AWS_CONTROLLER
 		}
 
 		// 导航
-		if (TPL::is_output('block/content_nav_menu.tpl.htm', 'explore/index'))
-		{
-			TPL::assign('content_nav_menu', $this->model('menu')->get_nav_menu_list('explore'));
-		}
-
-		// 边栏可能感兴趣的人
-		if (TPL::is_output('block/sidebar_recommend_users_topics.tpl.htm', 'explore/index'))
-		{
-			TPL::assign('sidebar_recommend_users_topics', $this->model('module')->recommend_users_topics($this->user_id));
-		}
-
-		// 边栏热门用户
-		if (TPL::is_output('block/sidebar_hot_users.tpl.htm', 'explore/index'))
-		{
-			TPL::assign('sidebar_hot_users', $this->model('module')->sidebar_hot_users($this->user_id, 5));
-		}
+		TPL::assign('content_nav_menu', $this->model('menu')->get_nav_menu_list('explore'));
 
 		// 边栏热门话题
-		if (TPL::is_output('block/sidebar_hot_topics.tpl.htm', 'explore/index'))
+		TPL::assign('sidebar_hot_topics', $this->model('module')->sidebar_hot_topics($category_info['id']));
+
+		// 边栏功能
+		TPL::assign('feature_list', $this->model('feature')->get_enabled_feature_list());
+
+		if (H::GET('type') == 'question')
 		{
-			TPL::assign('sidebar_hot_topics', $this->model('module')->sidebar_hot_topics($category_info['id']));
+			$type = 'question';
+		}
+		else if (H::GET('type') == 'article')
+		{
+			$type = 'article';
+		}
+		else if (H::GET('type') == 'video')
+		{
+			$type = 'video';
 		}
 
-		// 边栏专题
-		if (TPL::is_output('block/sidebar_feature.tpl.htm', 'explore/index'))
+		if (H::GET('recommend'))
 		{
-			TPL::assign('feature_list', $this->model('feature')->get_enabled_feature_list());
+			$recommend = true;
 		}
 
-		if (! $_GET['sort_type'] AND !$_GET['is_recommend'])
+		if (H::GET('sort_type') == 'hot')
 		{
-			$_GET['sort_type'] = 'new';
+			$sort_type = 'hot';
+			$day = H::GET_I('day');
+		}
+		else if (H::GET('sort_type') == 'unresponsive')
+		{
+			$sort_type = 'unresponsive';
+			$answer_count = 0;
 		}
 
-		if ($_GET['sort_type'] == 'hot')
+		if ($sort_type == 'hot')
 		{
-			$posts_list = $this->model('posts')->get_hot_posts(null, $category_info['id'], null, $_GET['day'], $_GET['page'], get_setting('contents_per_page'));
+			$posts_list = $this->model('posts')->get_hot_posts($type, $category_info['id'], $day, H::GET('page'), S::get_int('contents_per_page'));
 		}
 		else
 		{
-			$posts_list = $this->model('posts')->get_posts_list(null, $_GET['page'], get_setting('contents_per_page'), $_GET['sort_type'], null, $category_info['id'], $_GET['answer_count'], $_GET['day'], $_GET['is_recommend']);
+			$posts_list = $this->model('posts')->get_posts_list($type, H::GET('page'), S::get_int('contents_per_page'), null, $category_info['id'], $answer_count, $recommend);
 		}
 
 		if ($posts_list)
 		{
 			foreach ($posts_list AS $key => $val)
 			{
-				if ($val['answer_count'])
+				if ($val['post_type'] == 'question' AND $val['reply_count'])
 				{
-					$posts_list[$key]['answer_users'] = $this->model('question')->get_answer_users_by_question_id($val['question_id'], 2, $val['published_uid']);
+					$posts_list[$key]['answer_users'] = $this->model('question')->get_answer_users_by_question_id($val['id'], 2, $val['uid']);
 				}
 			}
 		}
 
-		TPL::assign('pagination', AWS_APP::pagination()->initialize(array(
-			'base_url' => get_js_url('/sort_type-' . preg_replace("/[\(\)\.;']/", '', $_GET['sort_type']) . '__category-' . $category_info['id'] . '__day-' . intval($_GET['day']) . '__is_recommend-' . intval($_GET['is_recommend'])),
+		$base_url = '';
+		if ($type)
+		{
+			if ($base_url)
+			{
+				$base_url .= '__';
+			}
+			$base_url .= 'type-' . $type;
+		}
+		if ($category_info['id'])
+		{
+			if ($base_url)
+			{
+				$base_url .= '__';
+			}
+			$base_url .= 'category-' . $category_info['id'];
+		}
+		if ($sort_type)
+		{
+			if ($base_url)
+			{
+				$base_url .= '__';
+			}
+			$base_url .= 'sort_type-' . $sort_type;
+		}
+		if ($day)
+		{
+			if ($base_url)
+			{
+				$base_url .= '__';
+			}
+			$base_url .= 'day-' . $day;
+		}
+		if ($recommend)
+		{
+			if ($base_url)
+			{
+				$base_url .= '__';
+			}
+			$base_url .= 'recommend-1';
+		}
+
+		TPL::assign('pagination', AWS_APP::pagination()->create(array(
+			'base_url' => url_rewrite('/') . $base_url,
 			'total_rows' => $this->model('posts')->get_posts_list_total(),
-			'per_page' => get_setting('contents_per_page')
-		))->create_links());
+			'per_page' => S::get_int('contents_per_page')
+		)));
 
 		TPL::assign('posts_list', $posts_list);
-		TPL::assign('posts_list_bit', TPL::output('explore/ajax/list', false));
+		TPL::assign('posts_list_bit', TPL::render('explore/list_template'));
 
 		TPL::output('explore/index');
 	}

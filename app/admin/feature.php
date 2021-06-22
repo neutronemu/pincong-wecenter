@@ -22,25 +22,20 @@ class feature extends AWS_ADMIN_CONTROLLER
 {
     public function setup()
     {
-        if (!$this->user_info['permission']['is_administrator'])
-        {
-            H::redirect_msg(AWS_APP::lang()->_t('你没有访问权限, 请重新登录'), '/');
-        }
-
         TPL::assign('menu_list', $this->model('admin')->fetch_menu_list(304));
     }
 
     public function list_action()
     {
-        $this->crumb(AWS_APP::lang()->_t('专题管理'), 'admin/feature/list/');
+        $this->crumb(_t('功能链接'));
 
-        $feature_list = $this->model('feature')->get_feature_list('sort ASC', $_GET['page'], $this->per_page);
+        $feature_list = $this->model('feature')->get_feature_list(H::GET('page'), $this->per_page);
 
-        TPL::assign('pagination', AWS_APP::pagination()->initialize(array(
-            'base_url' => get_js_url('/admin/feature/list/'),
-            'total_rows' => $this->model('feature')->found_rows(),
+        TPL::assign('pagination', AWS_APP::pagination()->create(array(
+            'base_url' => url_rewrite('/admin/feature/list/'),
+            'total_rows' => $this->model('feature')->total_rows(),
             'per_page' => 20
-        ))->create_links());
+        )));
 
         TPL::assign('list', $feature_list);
 
@@ -49,16 +44,16 @@ class feature extends AWS_ADMIN_CONTROLLER
 
     public function add_action()
     {
-        $this->crumb(AWS_APP::lang()->_t('添加专题'), 'admin/feature/add/');
+        $this->crumb(_t('添加'));
 
         TPL::output("admin/feature/edit");
     }
 
     public function edit_action()
     {
-        $this->crumb(AWS_APP::lang()->_t('编辑专题'), "admin/feature/list/");
+        $this->crumb(_t('编辑'));
 
-        TPL::assign('feature', $this->model('feature')->get_feature_by_id($_GET['feature_id']));
+        TPL::assign('feature', $this->model('feature')->get_feature_by_id(H::GET('feature_id')));
 
         TPL::output('admin/feature/edit');
     }

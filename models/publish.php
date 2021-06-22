@@ -20,653 +20,770 @@ if (!defined('IN_ANWSION'))
 
 class publish_class extends AWS_MODEL
 {
-
-	public function publish_scheduled_item($item)
+	private $key;
+	public function get_key()
 	{
-		switch ($item['type'])
+		if (!$this->key)
 		{
-			case 'question':
-				$this->publish_question(
-					$item['title'],
-					$item['message'],
-					$item['parent_id'], // category_id
-					$item['uid'],
-					$item['extra_data']['topics'],
-					$item['anonymous'],
-					$item['extra_data']['ask_user_id'],
-					$item['extra_data']['permission_create_topic']
-				);
-				break;
-
-			case 'answer':
-				$this->publish_answer(
-					$item['parent_id'], // question_id,
-					$item['message'],
-					$item['uid'],
-					$item['anonymous'],
-					$item['extra_data']['auto_focus'],
-					$item['extra_data']['permission_bring_thread_to_top']
-				);
-				break;
-
-			case 'article':
-				$this->publish_article(
-					$item['title'],
-					$item['message'],
-					$item['uid'],
-					$item['extra_data']['topics'],
-					$item['parent_id'], // category_id
-					$item['extra_data']['permission_create_topic'],
-					$item['anonymous']
-				);
-				break;
-
-			case 'article_comment':
-				$this->publish_article_comment(
-					$item['parent_id'], // article_id
-					$item['message'],
-					$item['uid'],
-					$item['extra_data']['at_uid'],
-					$item['anonymous'],
-					$item['extra_data']['permission_bring_thread_to_top']
-				);
-				break;
-
-			case 'video':
-				$this->publish_video(
-					$item['title'],
-					$item['message'],
-					$item['uid'],
-					$item['extra_data']['source_type'],
-					$item['extra_data']['source'],
-					$item['extra_data']['duration'],
-					$item['extra_data']['topics'],
-					$item['parent_id'], // category_id
-					$item['extra_data']['permission_create_topic'],
-					$item['anonymous']
-				);
-				break;
-
-			case 'video_comment':
-				$this->publish_video_comment(
-					$item['parent_id'], // video_id
-					$item['message'],
-					$item['uid'],
-					$item['extra_data']['at_uid'],
-					$item['anonymous'],
-					$item['extra_data']['permission_bring_thread_to_top']
-				);
-				break;
+			$this->key = AWS_APP::crypt()->new_key(G_SECUKEY);
 		}
+		return $this->key;
 	}
 
-	public function publish_scheduled_posts()
+	public function encrypt($message)
 	{
-		$now = real_time();
-		if ($items = $this->query_all("SELECT * FROM " . $this->get_table('scheduled_posts') . " WHERE time < " . $now))
+		if (!$message)
 		{
-			foreach ($items as $key => $val)
+			return '';
+		}
+		return AWS_APP::crypt()->encode($message, $this->get_key());
+	}
+
+	public function decrypt($message)
+	{
+		if (!$message)
+		{
+			return '';
+		}
+		return AWS_APP::crypt()->decode($message, $this->get_key());
+	}
+
+	// 延迟显示的时间戳
+	private function calc_later_time($minutes)
+	{
+		return real_time() + $minutes * 60 + rand(-30, 30);
+	}
+
+	private function save_topics($thread_type, $thread_id, $topics, $uid)
+	{
+		if (is_array($topics))
+		{
+			foreach ($topics AS $topic_title)
 			{
-				$val['extra_data'] = unserialize($val['extra_data']);
-				$this->publish_scheduled_item($val);
-				$this->delete('scheduled_posts', 'id = ' . ($val['id']));
+				$topic_id = $this->model('topic')->save_topic($topic_title, $uid, true);
+				$this->model('topic')->add_thread_topic($thread_type, $thread_id, $topic_id, null);
 			}
 		}
 	}
 
-	public function schedule($type, $time, $title, $message, $uid, $anonymous, $parent_id, $extra_data)
+	private function mention_users($thread_type, $thread_id, $reply_type, $reply_id, $sender_uid, $message)
+	{
+		if ($mentioned_uids = $this->model('mention')->get_mentioned_uids($message))
+		{
+			foreach ($mentioned_uids as $mentioned_uid)
+			{
+				$this->model('notification')->send(
+					$sender_uid,
+					$mentioned_uid,
+					'MENTION_USER',
+					$thread_type, $thread_id, $reply_type, $reply_id);
+			}
+			return count($mentioned_uids);
+		}
+		return 0;
+	}
+
+	private function notify_flowers($thread_type, $thread_id, $reply_type, $reply_id, $sender_uid)
+	{
+		if ($follower_uids = $this->model('postfollow')->get_follower_uids($thread_type, $thread_id))
+		{
+			foreach ($follower_uids as $uid)
+			{
+				$this->model('notification')->send(
+					$sender_uid,
+					$uid,
+					'REPLY_THREAD',
+					$thread_type, $thread_id, $reply_type, $reply_id);
+			}
+		}
+	}
+
+	private function notify_user($thread_type, $thread_id, $reply_type, $reply_id, $sender_uid, $recipient_uid)
+	{
+		$this->model('notification')->send(
+			$sender_uid,
+			$recipient_uid,
+			'REPLY_USER',
+			$thread_type, $thread_id, $reply_type, $reply_id);
+	}
+
+	private function publish_scheduled_item($val)
+	{
+		// decrypt
+		$data = unserialize_array($this->decrypt($val['data']));
+		if (!$data['uid'])
+		{
+			return;
+		}
+
+		switch ($val['type'])
+		{
+			case 'question':
+				$this->real_publish_question($data, 1);
+				break;
+
+			case 'article':
+				$this->real_publish_article($data, 1);
+				break;
+
+			case 'video':
+				$this->real_publish_video($data, 1);
+				break;
+
+			case 'question_reply':
+				$this->real_publish_answer($data);
+				break;
+
+			case 'article_reply':
+				$this->real_publish_article_comment($data);
+				break;
+
+			case 'video_reply':
+				$this->real_publish_video_comment($data);
+				break;
+
+			case 'question_comment':
+				$this->real_publish_question_discussion($data);
+				break;
+
+			case 'question_discussion':
+				$this->real_publish_answer_discussion($data);
+				break;
+		}
+	}
+
+	public function check_user_permission($item_type, $user_info)
+	{
+		if (!is_array($user_info) OR !is_array($user_info['permission']))
+		{
+			return false;
+		}
+		$types = $user_info['permission']['unallowed_post_types'];
+		if (!$types)
+		{
+			return true;
+		}
+		$types = array_map('trim', explode(',', $types));
+		if (in_array($item_type, $types))
+		{
+			return false;
+		}
+		return true;
+	}
+
+	// model('crond') 调用
+	public function publish_scheduled_posts()
+	{
+		$now = real_time();
+		if ($items = $this->fetch_all('scheduled_posts', ['time', 'lt', $now]))
+		{
+			foreach ($items as $key => $val)
+			{
+				$this->publish_scheduled_item($val);
+				$this->delete('scheduled_posts', ['id', 'eq', $val['id'], 'i']);
+			}
+		}
+	}
+
+	private function schedule($type, $time, $data)
 	{
 		return $this->insert('scheduled_posts', array(
 			'type' => $type,
 			'time' => $time,
-			'title' => $title,
-			'message' => $message,
-			'uid' => intval($uid),
-			'anonymous' => intval($anonymous),
-			'parent_id' => intval($parent_id),
-			'extra_data' => serialize($extra_data)
+			'uid' => $data['uid'],
+			'parent_id' => intval($data['parent_id']),
+			// encrypt
+			'data' => $this->encrypt(serialize($data))
 		));
 	}
 
-	public function publish_answer($question_id, $answer_content, $uid, $anonymous = null, $auto_focus = true, $bring_to_top = true)
-	{
-		if (!$question_info = $this->model('question')->get_question_info_by_id($question_id))
-		{
-			return false;
-		}
 
-		if (!$answer_id = $this->model('answer')->save_answer($question_id, $answer_content, $uid, $anonymous))
-		{
-			return false;
-		}
-
-		if ($at_users = $this->model('question')->parse_at_user($answer_content, false, true))
-		{
-			foreach ($at_users as $user_id)
-			{
-				if ($user_id != $uid)
-				{
-					$this->model('notify')->send($uid, $user_id, notify_class::TYPE_ANSWER_AT_ME, notify_class::CATEGORY_QUESTION, $question_info['question_id'], array(
-						'from_uid' => $uid,
-						'question_id' => $question_info['question_id'],
-						'item_id' => $answer_id,
-						'anonymous' => intval($anonymous)
-					));
-				}
-			}
-		}
-
-		if ($auto_focus)
-		{
-			if (! $this->model('question')->has_focus_question($question_id, $uid))
-			{
-				$this->model('question')->add_focus_question($question_id, $uid, $anonymous, false);
-			}
-		}
-
-		ACTION_LOG::save_action($uid, $answer_id, ACTION_LOG::CATEGORY_ANSWER, ACTION_LOG::ANSWER_QUESTION, $answer_content, $question_id);
-
-		ACTION_LOG::save_action($uid, $question_id, ACTION_LOG::CATEGORY_QUESTION, ACTION_LOG::ANSWER_QUESTION, $answer_content, $answer_id, null, intval($anonymous));
-
-		if ($question_info['published_uid'] != $uid AND !$this->model('currency')->fetch_log($uid, 'ANSWER_QUESTION', $question_id))
-		{
-			$this->model('currency')->process($uid, 'ANSWER_QUESTION', get_setting('currency_system_config_reply_question'), '回答问题 #' . $question_id, $question_id);
-
-			$this->model('currency')->process($question_info['published_uid'], 'QUESTION_ANSWER', get_setting('currency_system_config_question_replied'), '问题被回答 #' . $question_id, $question_id);
-		}
-
-		$this->model('question')->save_last_answer($question_id, $answer_id);
-
-		if ($focus_uids = $this->model('question')->get_focus_uid_by_question_id($question_id))
-		{
-			foreach ($focus_uids as $focus_user)
-			{
-				if ($focus_user['uid'] != $uid)
-				{
-					$this->model('notify')->send($uid, $focus_user['uid'], notify_class::TYPE_NEW_ANSWER, notify_class::CATEGORY_QUESTION, $question_id, array(
-						'question_id' => $question_id,
-						'from_uid' => $uid,
-						'item_id' => $answer_id,
-						'anonymous' => intval($anonymous)
-					));
-				}
-			}
-		}
-
-		// 删除回复邀请
-		$this->model('question')->answer_question_invite($question_id, $uid);
-
-		$this->model('posts')->set_posts_index($question_id, 'question', null, $bring_to_top);
-
-		return $answer_id;
-	}
-
-	public function publish_question($question_content, $question_detail, $category_id, $uid, $topics = null, $anonymous = null, $ask_user_id = null, $create_topic = true)
-	{
-		if ($question_id = $this->model('question')->save_question($question_content, $question_detail, $uid, $anonymous))
-		{
-			if ($category_id)
-			{
-				$this->update('question', array(
-					'category_id' => intval($category_id)
-				), 'question_id = ' . intval($question_id));
-			}
-
-			if (is_array($topics))
-			{
-				foreach ($topics AS $topic_title)
-				{
-					$topic_id = $this->model('topic')->save_topic($topic_title, $uid, $create_topic);
-
-					$this->model('topic')->save_topic_relation($uid, $topic_id, $question_id, 'question');
-				}
-			}
-
-			if ($ask_user_id)
-			{
-				$this->model('question')->add_invite($question_id, $uid, $ask_user_id);
-
-				$this->model('notify')->send($uid, $ask_user_id, notify_class::TYPE_INVITE_QUESTION, notify_class::CATEGORY_QUESTION, $question_id, array(
-					'from_uid' => $uid,
-					'question_id' => $question_id,
-				));
-
-				$user_info = $this->model('account')->get_user_info_by_uid($uid);
-
-			}
-
-			// 自动关注该问题
-			$this->model('question')->add_focus_question($question_id, $uid, $anonymous, false);
-
-			// 记录日志
-			ACTION_LOG::save_action($uid, $question_id, ACTION_LOG::CATEGORY_QUESTION, ACTION_LOG::ADD_QUESTION, $question_content, $question_detail, null, intval($anonymous));
-
-			$this->model('currency')->process($uid, 'NEW_QUESTION', get_setting('currency_system_config_new_question'), '发起问题 #' . $question_id, $question_id);
-
-			$this->model('posts')->set_posts_index($question_id, 'question');
-		}
-
-		return $question_id;
-	}
-
-	public function publish_article($title, $message, $uid, $topics = null, $category_id = null, $create_topic = true, $anonymous = null)
+	private function real_publish_question($data, $view_count = 0)
 	{
 		$now = fake_time();
 
-		if ($article_id = $this->insert('article', array(
-			'uid' => intval($uid),
-			'title' => htmlspecialchars($title),
-			'message' => htmlspecialchars($message),
-			'category_id' => intval($category_id),
+		$item_id = $this->insert('question', array(
+			'uid' => $data['uid'],
+			'title' => htmlspecialchars($data['title']),
+			'message' => htmlspecialchars($data['message']),
+			'category_id' => $data['category_id'],
 			'add_time' => $now,
 			'update_time' => $now,
-			'anonymous' => intval($anonymous)
-		)))
-		{
+			'view_count' => $view_count,
+		));
 
-			if (is_array($topics))
-			{
-				foreach ($topics as $key => $topic_title)
-				{
-					$topic_id = $this->model('topic')->save_topic($topic_title, $uid, $create_topic);
-
-					$this->model('topic')->save_topic_relation($uid, $topic_id, $article_id, 'article');
-				}
-			}
-
-			$this->model('search_fulltext')->push_index('article', $title, $article_id);
-
-			// 记录日志
-			ACTION_LOG::save_action($uid, $article_id, ACTION_LOG::CATEGORY_QUESTION, ACTION_LOG::ADD_ARTICLE, $title, $message, null, intval($anonymous));
-
-			$this->model('currency')->process($uid, 'NEW_ARTICLE', get_setting('currency_system_config_new_article'), '发起文章 #' . $article_id, $article_id);
-
-			$this->model('posts')->set_posts_index($article_id, 'article');
-
-			$this->shutdown_update('users', array(
-				'article_count' => $this->count('article', 'uid = ' . intval($uid))
-			), 'uid = ' . intval($uid));
-		}
-
-		return $article_id;
-	}
-
-	public function publish_article_comment($article_id, $message, $uid, $at_uid = null, $anonymous = null, $bring_to_top = true)
-	{
-		if (!$article_info = $this->model('article')->get_article_info_by_id($article_id))
+		if (!$item_id)
 		{
 			return false;
 		}
-		$article_id = $article_info['id'];
+
+		$this->model('posts')->set_posts_index($item_id, 'question');
+
+		$this->save_topics('question', $item_id, $data['topics'], $data['uid']);
+
+		if ($data['ask_user_id'])
+		{
+			$this->model('invite')->add_invite($item_id, $data['uid'], $data['ask_user_id']);
+		}
+
+		if ($data['follow'])
+		{
+			$this->model('postfollow')->follow('question', $item_id, $data['uid']);
+		}
+
+		if (!$data['permission_inactive_user'])
+		{
+			$this->mention_users('question', $item_id, null, 0, $data['uid'], $data['message']);
+		}
+
+		// 记录用户动态
+		$this->model('activity')->push('question', $item_id, $data['uid']);
+
+		$this->model('account')->update_user_fields(array(
+			'user_update_time' => $now
+		), $data['uid']);
+
+		return $item_id;
+	}
+
+	private function real_publish_article($data, $view_count = 0)
+	{
 		$now = fake_time();
 
-		$comment_id = $this->insert('article_comment', array(
-			'uid' => intval($uid),
-			'article_id' => intval($article_id),
-			'message' => htmlspecialchars($message),
+		$item_id = $this->insert('article', array(
+			'uid' => $data['uid'],
+			'title' => htmlspecialchars($data['title']),
+			'message' => htmlspecialchars($data['message']),
+			'category_id' => $data['category_id'],
 			'add_time' => $now,
-			'at_uid' => intval($at_uid),
-			'anonymous' => intval($anonymous)
+			'update_time' => $now,
+			'view_count' => $view_count,
 		));
 
-		// TODO: comments 字段改为 comment_count
+		if (!$item_id)
+		{
+			return false;
+		}
+
+		$this->model('posts')->set_posts_index($item_id, 'article');
+
+		$this->save_topics('article', $item_id, $data['topics'], $data['uid']);
+
+		if ($data['follow'])
+		{
+			$this->model('postfollow')->follow('article', $item_id, $data['uid']);
+		}
+
+		if (!$data['permission_inactive_user'])
+		{
+			$this->mention_users('article', $item_id, null, 0, $data['uid'], $data['message']);
+		}
+
+		// 记录用户动态
+		$this->model('activity')->push('article', $item_id, $data['uid']);
+
+		$this->model('account')->update_user_fields(array(
+			'user_update_time' => $now
+		), $data['uid']);
+
+		return $item_id;
+	}
+
+	private function real_publish_video($data, $view_count = 0)
+	{
+		$now = fake_time();
+
+		$item_id = $this->insert('video', array(
+			'uid' => $data['uid'],
+			'title' => htmlspecialchars($data['title']),
+			'message' => htmlspecialchars($data['message']),
+			'category_id' => $data['category_id'],
+			'add_time' => $now,
+			'update_time' => $now,
+			'view_count' => $view_count,
+			'source_type' => $data['source_type'],
+			'source' => $data['source'],
+		));
+
+		if (!$item_id)
+		{
+			return false;
+		}
+
+		$this->model('posts')->set_posts_index($item_id, 'video');
+
+		$this->save_topics('video', $item_id, $data['topics'], $data['uid']);
+
+		if ($data['follow'])
+		{
+			$this->model('postfollow')->follow('video', $item_id, $data['uid']);
+		}
+
+		if (!$data['permission_inactive_user'])
+		{
+			$this->mention_users('video', $item_id, null, 0, $data['uid'], $data['message']);
+		}
+
+		// 记录用户动态
+		$this->model('activity')->push('video', $item_id, $data['uid']);
+
+		$this->model('account')->update_user_fields(array(
+			'user_update_time' => $now
+		), $data['uid']);
+
+		return $item_id;
+	}
+
+
+	private function real_publish_answer($data)
+	{
+		if (!$parent_info = $this->model('content')->get_thread_info_by_id('question', $data['parent_id']))
+		{
+			return false;
+		}
+
+		// 给题主增加游戏币
+		if ($data['permission_affect_currency'] AND $data['uid'] != $parent_info['uid'])
+		{
+			if (!$this->model('content')->has_user_relpied_to_thread('question', $data['parent_id'], $data['uid']))
+			{
+				$this->model('currency')->process($parent_info['uid'], 'REPLIED', S::get('currency_system_config_question_replied'), '问题收到回应', $data['parent_id'], 'question');
+			}
+		}
+
+		$now = fake_time();
+
+		$item_id = $this->insert('question_reply', array(
+			'parent_id' => $data['parent_id'],
+			'message' => htmlspecialchars($data['message']),
+			'add_time' => $now,
+			'uid' => $data['uid'],
+		));
+
+		if (!$item_id)
+		{
+			return false;
+		}
+
+		$this->update('question', array(
+			'reply_count' => $this->count('question_reply', ['parent_id', 'eq', $data['parent_id'], 'i']),
+			'update_time' => $now,
+			'last_uid' => $data['uid']
+		), ['id', 'eq', $data['parent_id'], 'i']);
+
+		$this->model('posts')->set_posts_index($data['parent_id'], 'question');
+
+		if (!$data['permission_inactive_user'])
+		{
+			$this->mention_users('question', $parent_info['id'], 'question_reply', $item_id, $data['uid'], $data['message']);
+			$this->notify_flowers('question', $parent_info['id'], 'question_reply', $item_id, $data['uid']);
+		}
+
+		if ($data['follow'])
+		{
+			$this->model('postfollow')->follow('question', $data['parent_id'], $data['uid']);
+		}
+
+		// 记录用户动态
+		$this->model('activity')->push('question_reply', $item_id, $data['uid']);
+
+		$this->model('account')->update_user_fields(array(
+			'user_update_time' => $now
+		), $data['uid']);
+
+
+		// 删除邀请
+		$this->model('invite')->answer_question_invite($data['parent_id'], $data['uid']);
+
+		return $item_id;
+	}
+
+	private function real_publish_article_comment($data)
+	{
+		if (!$parent_info = $this->model('content')->get_thread_info_by_id('article', $data['parent_id']))
+		{
+			return false;
+		}
+
+		// 给题主增加游戏币
+		if ($data['permission_affect_currency'] AND $data['uid'] != $parent_info['uid'])
+		{
+			if (!$this->model('content')->has_user_relpied_to_thread('article', $data['parent_id'], $data['uid']))
+			{
+				$this->model('currency')->process($parent_info['uid'], 'REPLIED', S::get('currency_system_config_article_replied'), '文章收到回应', $data['parent_id'], 'article');
+			}
+		}
+
+		$now = fake_time();
+
+		$item_id = $this->insert('article_reply', array(
+			'uid' => $data['uid'],
+			'parent_id' => $data['parent_id'],
+			'message' => htmlspecialchars($data['message']),
+			'add_time' => $now,
+			'at_uid' => $data['at_uid'],
+		));
+
+		if (!$item_id)
+		{
+			return false;
+		}
+
 		$this->update('article', array(
-			'comments' => $this->count('article_comment', 'article_id = ' . intval($article_id)),
-			'update_time' => $now
-		), 'id = ' . intval($article_id));
-
-		if ($at_uid AND $at_uid != $uid)
-		{
-			$this->model('notify')->send($uid, $at_uid, notify_class::TYPE_ARTICLE_COMMENT_AT_ME, notify_class::CATEGORY_ARTICLE, $article_id, array(
-				'from_uid' => $uid,
-				'article_id' => $article_id,
-				'item_id' => $comment_id,
-				'anonymous' => intval($anonymous)
-			));
-		}
-
-		if ($at_users = $this->model('question')->parse_at_user($message, false, true))
-		{
-			foreach ($at_users as $user_id)
-			{
-				if ($user_id != $uid)
-				{
-					$this->model('notify')->send($uid, $user_id, notify_class::TYPE_ARTICLE_COMMENT_AT_ME, notify_class::CATEGORY_ARTICLE, $article_id, array(
-						'from_uid' => $uid,
-						'article_id' => $article_id,
-						'item_id' => $comment_id,
-						'anonymous' => intval($anonymous)
-					));
-				}
-			}
-		}
-
-		if ($article_info['uid'] != $uid)
-		{
-			$this->model('notify')->send($uid, $article_info['uid'], notify_class::TYPE_ARTICLE_NEW_COMMENT, notify_class::CATEGORY_ARTICLE, $article_id, array(
-				'from_uid' => $uid,
-				'article_id' => $article_id,
-				'item_id' => $comment_id,
-				'anonymous' => intval($anonymous)
-			));
-		}
-
-		ACTION_LOG::save_action($uid, $article_id, ACTION_LOG::CATEGORY_QUESTION, ACTION_LOG::ADD_COMMENT_ARTICLE, $message, $comment_id, null, intval($anonymous));
-
-		if ($article_info['uid'] != $uid AND !$this->model('currency')->fetch_log($uid, 'COMMENT_ARTICLE', $article_id))
-		{
-			$this->model('currency')->process($uid, 'COMMENT_ARTICLE', get_setting('currency_system_config_reply_article'), '评论文章 #' . $article_id, $article_id);
-
-			$this->model('currency')->process($article_info['uid'], 'ARTICLE_COMMENTED', get_setting('currency_system_config_article_replied'), '文章被评论 #' . $article_id, $article_id);
-		}
-
-		$this->model('posts')->set_posts_index($article_id, 'article', null, $bring_to_top);
-
-		return $comment_id;
-	}
-
-
-	public function publish_video($title, $message, $uid, $source_type, $source, $duration, $topics = null, $category_id = null, $create_topic = true, $anonymous = null)
-	{
-		$now = fake_time();
-
-		if ($video_id = $this->insert('video', array(
-			'uid' => intval($uid),
-			'title' => htmlspecialchars($title),
-			'message' => htmlspecialchars($message),
-			'source_type' => $source_type,
-			'source' => $source,
-			'duration' => $duration,
-			'category_id' => intval($category_id),
-			'add_time' => $now,
+			'reply_count' => $this->count('article_reply', ['parent_id', 'eq', $data['parent_id'], 'i']),
 			'update_time' => $now,
-			'anonymous' => intval($anonymous)
-		)))
+			'last_uid' => $data['uid']
+		), ['id', 'eq', $data['parent_id'], 'i']);
+
+		$this->model('posts')->set_posts_index($data['parent_id'], 'article');
+
+		if (!$data['permission_inactive_user'])
 		{
-
-			if (is_array($topics))
+			$this->mention_users('article', $parent_info['id'], 'article_reply', $item_id, $data['uid'], $data['message']);
+			if ($data['at_uid'])
 			{
-				foreach ($topics as $key => $topic_title)
-				{
-					$topic_id = $this->model('topic')->save_topic($topic_title, $uid, $create_topic);
-
-					$this->model('topic')->save_topic_relation($uid, $topic_id, $video_id, 'video');
-				}
+				$this->notify_user('article', $parent_info['id'], 'article_reply', $item_id, $data['uid'], $data['at_uid']);
 			}
-
-			/*
-			// 搜索相关 暂不实现
-			$this->model('search_fulltext')->push_index('video', $title, $video_id);
-			*/
-
-			/*
-			// 记录日志 暂不实现
-			//ACTION_LOG::save_action($uid, $video_id, ACTION_LOG::CATEGORY_QUESTION, ACTION_LOG::ADD_VIDEO, $title, $message, null, intval($anonymous));
-			*/
-
-			$this->model('currency')->process($uid, 'NEW_VIDEO', get_setting('currency_system_config_new_video'), '发起投稿 #' . $video_id, $video_id);
-
-			$this->model('posts')->set_posts_index($video_id, 'video');
-
+			else
+			{
+				$this->notify_flowers('article', $parent_info['id'], 'article_reply', $item_id, $data['uid']);
+			}
 		}
 
-		return $video_id;
+		if ($data['follow'])
+		{
+			$this->model('postfollow')->follow('article', $data['parent_id'], $data['uid']);
+		}
+
+		// 记录用户动态
+		$this->model('activity')->push('article_reply', $item_id, $data['uid']);
+
+		$this->model('account')->update_user_fields(array(
+			'user_update_time' => $now
+		), $data['uid']);
+
+		return $item_id;
 	}
 
-	public function publish_video_comment($video_id, $message, $uid, $at_uid = null, $anonymous = null, $bring_to_top = true)
+	private function real_publish_video_comment($data)
 	{
-		if (!$video_info = $this->model('video')->get_video_info_by_id($video_id))
+		if (!$parent_info = $this->model('content')->get_thread_info_by_id('video', $data['parent_id']))
 		{
 			return false;
 		}
-		$video_id = $video_info['id'];
+
+		// 给题主增加游戏币
+		if ($data['permission_affect_currency'] AND $data['uid'] != $parent_info['uid'])
+		{
+			if (!$this->model('content')->has_user_relpied_to_thread('video', $data['parent_id'], $data['uid']))
+			{
+				$this->model('currency')->process($parent_info['uid'], 'REPLIED', S::get('currency_system_config_video_replied'), '影片收到回应', $data['parent_id'], 'video');
+			}
+		}
+
 		$now = fake_time();
 
-		$comment_id = $this->insert('video_comment', array(
-			'uid' => intval($uid),
-			'video_id' => intval($video_id),
-			'message' => htmlspecialchars($message),
+		$item_id = $this->insert('video_reply', array(
+			'uid' => $data['uid'],
+			'parent_id' => $data['parent_id'],
+			'message' => htmlspecialchars($data['message']),
 			'add_time' => $now,
-			'at_uid' => intval($at_uid),
-			'anonymous' => intval($anonymous)
+			'at_uid' => $data['at_uid'],
 		));
+
+		if (!$item_id)
+		{
+			return false;
+		}
 
 		$this->update('video', array(
-			'comment_count' => $this->count('video_comment', 'video_id = ' . intval($video_id)),
-			'update_time' => $now
-		), 'id = ' . intval($video_id));
+			'reply_count' => $this->count('video_reply', ['parent_id', 'eq', $data['parent_id'], 'i']),
+			'update_time' => $now,
+			'last_uid' => $data['uid']
+		), ['id', 'eq', $data['parent_id'], 'i']);
 
-		if ($at_uid AND $at_uid != $uid)
-		{
-			/*
-			// 通知 暂不实现
-			$this->model('notify')->send($uid, $at_uid, notify_class::TYPE_VIDEO_COMMENT_AT_ME, notify_class::CATEGORY_VIDEO, $video_id, array(
-				'from_uid' => $uid,
-				'video_id' => $video_id,
-				'item_id' => $comment_id,
-				'anonymous' => intval($anonymous)
-			));
-			*/
-		}
+		$this->model('posts')->set_posts_index($data['parent_id'], 'video');
 
-		if ($at_users = $this->model('question')->parse_at_user($message, false, true))
+		if (!$data['permission_inactive_user'])
 		{
-			foreach ($at_users as $user_id)
+			$this->mention_users('video', $parent_info['id'], 'video_reply', $item_id, $data['uid'], $data['message']);
+			if ($data['at_uid'])
 			{
-				if ($user_id != $uid)
-				{
-					/*
-					// 通知 暂不实现
-					$this->model('notify')->send($uid, $user_id, notify_class::TYPE_VIDEO_COMMENT_AT_ME, notify_class::CATEGORY_VIDEO, $video_id, array(
-						'from_uid' => $uid,
-						'video_id' => $video_id,
-						'item_id' => $comment_id,
-						'anonymous' => intval($anonymous)
-					));
-					*/
-				}
+				$this->notify_user('video', $parent_info['id'], 'video_reply', $item_id, $data['uid'], $data['at_uid']);
+			}
+			else
+			{
+				$this->notify_flowers('video', $parent_info['id'], 'video_reply', $item_id, $data['uid']);
 			}
 		}
 
-		if ($video_info['uid'] != $uid)
+		if ($data['follow'])
 		{
-			/*
-			// 通知 暂不实现
-			$this->model('notify')->send($uid, $video_info['uid'], notify_class::TYPE_VIDEO_NEW_COMMENT, notify_class::CATEGORY_VIDEO, $video_id, array(
-				'from_uid' => $uid,
-				'video_id' => $video_id,
-				'item_id' => $comment_id,
-				'anonymous' => intval($anonymous)
-			));
-			*/
+			$this->model('postfollow')->follow('video', $data['parent_id'], $data['uid']);
 		}
 
-		/*
-		// 记录日志 暂不实现
-		ACTION_LOG::save_action($uid, $video_id, ACTION_LOG::CATEGORY_QUESTION, ACTION_LOG::ADD_COMMENT_VIDEO, $message, $comment_id, null, intval($anonymous));
-		*/
+		// 记录用户动态
+		$this->model('activity')->push('video_reply', $item_id, $data['uid']);
 
-		if ($video_info['uid'] != $uid AND !$this->model('currency')->fetch_log($uid, 'COMMENT_VIDEO', $video_id))
-		{
-			$this->model('currency')->process($uid, 'COMMENT_VIDEO', get_setting('currency_system_config_reply_video'), '评论投稿 #' . $video_id, $video_id);
+		$this->model('account')->update_user_fields(array(
+			'user_update_time' => $now
+		), $data['uid']);
 
-			$this->model('currency')->process($video_info['uid'], 'VIDEO_COMMENTED', get_setting('currency_system_config_video_replied'), '投稿被评论 #' . $video_id, $video_id);
-		}
-
-		$this->model('posts')->set_posts_index($video_id, 'video', null, $bring_to_top);
-
-		return $comment_id;
+		return $item_id;
 	}
 
 
 
-
-	public function check_answer_limit_rate($uid, $user_permission)
+	private function real_publish_question_discussion($data)
 	{
-		$limit = intval($user_permission['reply_limit_per_day']);
-		if (!$limit)
-		{
-			return true;
-		}
-
-		$uid = intval($uid);
-		$time_after = real_time() - 24 * 3600;
-
-		$where = "add_time > " . $time_after . " AND uid =" . $uid;
-		$count = $this->count('answer', $where);
-		if ($count >= $limit)
+		if (!$thread_info = $this->model('content')->get_thread_info_by_id('question', $data['parent_id']))
 		{
 			return false;
 		}
 
-		$where = "type = 'answer' AND time > " . $time_after . " AND uid =" . $uid;
-		$count += $this->count('scheduled_posts', $where);
-		if ($count >= $limit)
+		$now = fake_time();
+
+		$item_id = $this->insert('question_comment', array(
+			'parent_id' => $data['parent_id'],
+			'message' => htmlspecialchars($data['message']),
+			'add_time' => $now,
+			'uid' => $data['uid'],
+		));
+
+		if (!$item_id)
 		{
 			return false;
 		}
 
-		return true;
+		$discussion_count = $this->count('question_comment', ['parent_id', 'eq', $data['parent_id'], 'i']);
+
+		// 被合并的主题已锁, 不可讨论, 无需 $thread_info['redirect_id']
+
+		$this->update('question', array(
+			'comment_count' => $discussion_count,
+			'update_time' => $now,
+			'last_uid' => $data['uid'],
+		), ['id', 'eq', $thread_info['id'], 'i']);
+
+		if (S::get('discussion_bring_top') == 'Y')
+		{
+			$this->model('posts')->bring_to_top($thread_info['id'], 'question');
+		}
+
+		if (!$data['permission_inactive_user'])
+		{
+			if (!$this->mention_users('question', $thread_info['id'], null, 0, $data['uid'], $data['message']))
+			{
+				$this->notify_user('question', $thread_info['id'], null, 0, $data['uid'], $thread_info['uid']);
+			}
+		}
+
+		// TODO: 记录用户动态
+
+		$this->model('account')->update_user_fields(array(
+			'user_update_time' => $now
+		), $data['uid']);
+
+		return $item_id;
 	}
 
-	public function check_question_limit_rate($uid, $user_permission)
+
+	private function real_publish_answer_discussion($data)
 	{
-		$limit = intval($user_permission['thread_limit_per_day']);
-		if (!$limit)
+		if (!$reply_info = $this->model('content')->get_reply_info_by_id('question_reply', $data['parent_id']))
 		{
-			return true;
+			return false;
 		}
-
-		$uid = intval($uid);
-		$time_after = real_time() - 24 * 3600;
-
-		$where = "add_time > " . $time_after . " AND published_uid =" . $uid;
-		$count = $this->count('question', $where);
-		if ($count >= $limit)
+		if (!$thread_info = $this->model('content')->get_thread_info_by_id('question', $reply_info['parent_id']))
 		{
 			return false;
 		}
 
-		$where = "type = 'question' AND time > " . $time_after . " AND uid =" . $uid;
-		$count += $this->count('scheduled_posts', $where);
-		if ($count >= $limit)
+		$now = fake_time();
+
+		$item_id = $this->insert('question_discussion', array(
+			'parent_id' => $data['parent_id'],
+			'message' => htmlspecialchars($data['message']),
+			'add_time' => $now,
+			'uid' => $data['uid'],
+		));
+
+		if (!$item_id)
 		{
 			return false;
 		}
 
-		return true;
+		$discussion_count = $this->count('question_discussion', ['parent_id', 'eq', $data['parent_id'], 'i']);
+
+		// 被合并的主题已锁, 但楼中楼仍可讨论
+		$thread_id = ($thread_info['redirect_id'] ? $thread_info['redirect_id'] : $thread_info['id']);
+
+		$this->update('question', array(
+			'update_time' => $now,
+			'last_uid' => $data['uid'],
+		), ['id', 'eq', $thread_id, 'i']);
+
+		if (S::get('discussion_bring_top') == 'Y')
+		{
+			$this->model('posts')->bring_to_top($thread_id, 'question');
+		}
+
+		$this->update('question_reply', array(
+			'comment_count' => $discussion_count,
+		), ['id', 'eq', $data['parent_id'], 'i']);
+
+		if (!$data['permission_inactive_user'])
+		{
+			if (!$this->mention_users('question', $thread_info['id'], 'question_reply', $reply_info['id'], $data['uid'], $data['message']))
+			{
+				$this->notify_user('question', $thread_info['id'], 'question_reply', $reply_info['id'], $data['uid'], $reply_info['uid']);
+			}
+		}
+
+		// TODO: 记录用户动态
+
+		$this->model('account')->update_user_fields(array(
+			'user_update_time' => $now
+		), $data['uid']);
+
+		return $item_id;
 	}
 
-	public function check_article_limit_rate($uid, $user_permission)
+
+
+	public function publish_question($data, $real_uid, $later)
 	{
-		$limit = intval($user_permission['thread_limit_per_day']);
-		if (!$limit)
+		if ($later)
 		{
-			return true;
+			$this->schedule('question', $this->calc_later_time($later), $data);
+		}
+		else
+		{
+			$item_id = $this->real_publish_question($data);
 		}
 
-		$uid = intval($uid);
-		$time_after = real_time() - 24 * 3600;
-
-		$where = "add_time > " . $time_after . " AND uid =" . $uid;
-		$count = $this->count('article', $where);
-		if ($count >= $limit)
-		{
-			return false;
-		}
-
-		$where = "type = 'article' AND time > " . $time_after . " AND uid =" . $uid;
-		$count += $this->count('scheduled_posts', $where);
-		if ($count >= $limit)
-		{
-			return false;
-		}
-
-		return true;
+		$is_anonymous = ($real_uid != $data['uid']);
+		$this->model('currency')->process($real_uid, 'NEW_THREAD', S::get('currency_system_config_new_question'), '发布问题', null, null, $is_anonymous);
+		return $item_id;
 	}
 
-	public function check_article_comment_limit_rate($uid, $user_permission)
+	public function publish_article($data, $real_uid, $later)
 	{
-		$limit = intval($user_permission['reply_limit_per_day']);
-		if (!$limit)
+		if ($later)
 		{
-			return true;
+			$this->schedule('article', $this->calc_later_time($later), $data);
+		}
+		else
+		{
+			$item_id = $this->real_publish_article($data);
 		}
 
-		$uid = intval($uid);
-		$time_after = real_time() - 24 * 3600;
-
-		$where = "add_time > " . $time_after . " AND uid =" . $uid;
-		$count = $this->count('article_comment', $where);
-		if ($count >= $limit)
-		{
-			return false;
-		}
-
-		$where = "type = 'article_comment' AND time > " . $time_after . " AND uid =" . $uid;
-		$count += $this->count('scheduled_posts', $where);
-		if ($count >= $limit)
-		{
-			return false;
-		}
-
-		return true;
+		$is_anonymous = ($real_uid != $data['uid']);
+		$this->model('currency')->process($real_uid, 'NEW_THREAD', S::get('currency_system_config_new_article'), '发布文章', null, null, $is_anonymous);
+		return $item_id;
 	}
 
-	public function check_video_limit_rate($uid, $user_permission)
+	public function publish_video($data, $real_uid, $later)
 	{
-		$limit = intval($user_permission['thread_limit_per_day']);
-		if (!$limit)
+		if ($later)
 		{
-			return true;
+			$this->schedule('video', $this->calc_later_time($later), $data);
+		}
+		else
+		{
+			$item_id = $this->real_publish_video($data);
 		}
 
-		$uid = intval($uid);
-		$time_after = real_time() - 24 * 3600;
-
-		$where = "add_time > " . $time_after . " AND uid =" . $uid;
-		$count = $this->count('video', $where);
-		if ($count >= $limit)
-		{
-			return false;
-		}
-
-		$where = "type = 'video' AND time > " . $time_after . " AND uid =" . $uid;
-		$count += $this->count('scheduled_posts', $where);
-		if ($count >= $limit)
-		{
-			return false;
-		}
-
-		return true;
+		$is_anonymous = ($real_uid != $data['uid']);
+		$this->model('currency')->process($real_uid, 'NEW_THREAD', S::get('currency_system_config_new_video'), '发布影片', null, null, $is_anonymous);
+		return $item_id;
 	}
 
-	public function check_video_comment_limit_rate($uid, $user_permission)
+
+	public function publish_answer($data, $real_uid, $later, $pay)
 	{
-		$limit = intval($user_permission['reply_limit_per_day']);
-		if (!$limit)
+		if ($later)
 		{
-			return true;
+			$this->schedule('question_reply', $this->calc_later_time($later), $data);
+		}
+		else
+		{
+			$item_id = $this->real_publish_answer($data);
 		}
 
-		$uid = intval($uid);
-		$time_after = real_time() - 24 * 3600;
-
-		$where = "add_time > " . $time_after . " AND uid =" . $uid;
-		$count = $this->count('video_comment', $where);
-		if ($count >= $limit)
+		if ($pay)
 		{
-			return false;
+			$is_anonymous = ($real_uid != $data['uid']);
+			$this->model('currency')->process($real_uid, 'REPLY', S::get('currency_system_config_reply_question'), '回应问题', $data['parent_id'], 'question', $is_anonymous);
 		}
-
-		$where = "type = 'video_comment' AND time > " . $time_after . " AND uid =" . $uid;
-		$count += $this->count('scheduled_posts', $where);
-		if ($count >= $limit)
-		{
-			return false;
-		}
-
-		return true;
+		return $item_id;
 	}
 
+	public function publish_article_comment($data, $real_uid, $later, $pay)
+	{
+		if ($later)
+		{
+			$this->schedule('article_reply', $this->calc_later_time($later), $data);
+		}
+		else
+		{
+			$item_id = $this->real_publish_article_comment($data);
+		}
+
+		if ($pay)
+		{
+			$is_anonymous = ($real_uid != $data['uid']);
+			$this->model('currency')->process($real_uid, 'REPLY', S::get('currency_system_config_reply_article'), '回应文章', $data['parent_id'], 'article', $is_anonymous);
+		}
+		return $item_id;
+	}
+
+	public function publish_video_comment($data, $real_uid, $later, $pay)
+	{
+		if ($later)
+		{
+			$this->schedule('video_reply', $this->calc_later_time($later), $data);
+		}
+		else
+		{
+			$item_id = $this->real_publish_video_comment($data);
+		}
+
+		if ($pay)
+		{
+			$is_anonymous = ($real_uid != $data['uid']);
+			$this->model('currency')->process($real_uid, 'REPLY', S::get('currency_system_config_reply_video'), '回应影片', $data['parent_id'], 'video', $is_anonymous);
+		}
+		return $item_id;
+	}
+
+
+
+	public function publish_question_discussion($data, $real_uid, $later)
+	{
+		if ($later)
+		{
+			$this->schedule('question_comment', $this->calc_later_time($later), $data);
+		}
+		else
+		{
+			$item_id = $this->real_publish_question_discussion($data);
+		}
+
+		return $item_id;
+	}
+
+	public function publish_answer_discussion($data, $real_uid, $later)
+	{
+		if ($later)
+		{
+			$this->schedule('question_discussion', $this->calc_later_time($later), $data);
+		}
+		else
+		{
+			$item_id = $this->real_publish_answer_discussion($data);
+		}
+
+		return $item_id;
+	}
 }

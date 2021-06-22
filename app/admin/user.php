@@ -22,68 +22,73 @@ class user extends AWS_ADMIN_CONTROLLER
 {
     public function list_action()
     {
-        if ($_POST['action'] == 'search')
+        if (H::POST('action') == 'search')
         {
+			$param = array();
+
             foreach ($_POST as $key => $val)
             {
                 if (in_array($key, array('user_name')))
                 {
-                    $val = rawurlencode($val);
+                    $val = safe_url_encode($val);
                 }
 
                 $param[] = $key . '-' . $val;
             }
 
-            H::ajax_json_output(AWS_APP::RSM(array(
-                'url' => get_js_url('/admin/user/list/' . implode('__', $param))
-            ), 1, null));
+            H::ajax_location(url_rewrite('/admin/user/list/' . implode('__', $param)));
         }
 
         $where = array();
 
-        if ($_GET['type'] == 'forbidden')
+        if (H::GET('type') == 'forbidden')
         {
-            $where[] = 'forbidden <> 0';
+            $where[] = ['forbidden', 'notEq', 0];
         }
 
-        if ($_GET['user_name'])
+        if (H::GET('type') == 'flagged')
         {
-            $where[] = "user_name LIKE '%" . $this->model('people')->quote($_GET['user_name']) . "%'";
+            $where[] = ['flagged', 'notEq', 0];
         }
 
-        if ($_GET['group_id'])
+        if (H::GET('user_name'))
         {
-            $where[] = 'group_id = ' . intval($_GET['group_id']);
+            $where[] = ['user_name', 'like', '%' . escape_like_clause(htmlspecialchars(H::GET('user_name'))) . '%', 's'];
         }
 
-        if ($_GET['currency_min'])
+        if (H::GET('group_id'))
         {
-            $where[] = 'currency >= ' . intval($_GET['currency_min']);
+            $where[] = ['group_id', 'eq', H::GET('group_id'), 'i'];
         }
 
-        if ($_GET['currency_max'])
+        if (H::GET('currency_min'))
         {
-            $where[] = 'currency <= ' . intval($_GET['currency_max']);
+            $where[] = ['currency', 'gte', H::GET('currency_min'), 'i'];
         }
 
-        if ($_GET['reputation_min'])
+        if (H::GET('currency_max'))
         {
-            $where[] = 'reputation >= ' . intval($_GET['reputation_min']);
+            $where[] = ['currency', 'lte', H::GET('currency_max'), 'i'];
         }
 
-        if ($_GET['reputation_max'])
+        if (H::GET('reputation_min'))
         {
-            $where[] = 'reputation <= ' . intval($_GET['reputation_max']);
+            $where[] = ['reputation', 'gte', H::GET('reputation_min'), 'i'];
+        }
+
+        if (H::GET('reputation_max'))
+        {
+            $where[] = ['reputation', 'lte', H::GET('reputation_max'), 'i'];
         }
 
 
-        $user_list = $this->model('people')->fetch_page('users', implode(' AND ', $where), 'uid DESC', $_GET['page'], $this->per_page);
+        $user_list = $this->model('account')->fetch_page('users', $where, 'uid DESC', H::GET('page'), $this->per_page);
         foreach($user_list as $key => $val)
         {
-            $user_list[$key]['reputation_group_id'] = $this->model('reputation')->get_reputation_group_id_by_reputation($val['reputation']);
+            $user_list[$key]['reputation_group_id'] = $this->model('usergroup')->get_group_id_by_reputation($val['reputation']);
         }
 
-        $total_rows = $this->model('people')->found_rows();
+        $total_rows = $this->model('account')->total_rows();
 
         $url_param = array();
 
@@ -91,20 +96,20 @@ class user extends AWS_ADMIN_CONTROLLER
         {
             if (!in_array($key, array('app', 'c', 'act', 'page')))
             {
-                $url_param[] = $key . '-' . $val;
+                $url_param[] = htmlspecialchars($key) . '-' . htmlspecialchars($val);
             }
         }
 
-        TPL::assign('pagination', AWS_APP::pagination()->initialize(array(
-            'base_url' => get_js_url('/admin/user/list/') . implode('__', $url_param),
+        TPL::assign('pagination', AWS_APP::pagination()->create(array(
+            'base_url' => url_rewrite('/admin/user/list/') . implode('__', $url_param),
             'total_rows' => $total_rows,
             'per_page' => $this->per_page
-        ))->create_links());
+        )));
 
-        $this->crumb(AWS_APP::lang()->_t('会员列表'), "admin/user/list/");
+        $this->crumb(_t('会员列表'));
 
-        TPL::assign('member_group', $this->model('account')->get_user_group_list(1));
-        TPL::assign('system_group', $this->model('account')->get_user_group_list(0));
+        TPL::assign('member_group', $this->model('usergroup')->get_reputation_group_list());
+        TPL::assign('system_group', $this->model('usergroup')->get_normal_group_list());
         TPL::assign('total_rows', $total_rows);
         TPL::assign('list', $user_list);
         TPL::assign('menu_list', $this->model('admin')->fetch_menu_list(402));
@@ -114,32 +119,22 @@ class user extends AWS_ADMIN_CONTROLLER
 
     public function group_list_action()
     {
-        $this->crumb(AWS_APP::lang()->_t('用户组管理'), "admin/user/group_list/");
+        $this->crumb(_t('用户组管理'));
 
-        if (!$this->user_info['permission']['is_administrator'])
-        {
-            H::redirect_msg(AWS_APP::lang()->_t('你没有访问权限, 请重新登录'), '/');
-        }
-
-        TPL::assign('member_group', $this->model('account')->get_user_group_list(1));
-        TPL::assign('system_group', $this->model('account')->get_user_group_list(0, 0));
-        TPL::assign('custom_group', $this->model('account')->get_user_group_list(0, 1));
+        TPL::assign('member_group', $this->model('usergroup')->get_reputation_group_list());
+        TPL::assign('system_group', $this->model('usergroup')->get_system_group_list());
+        TPL::assign('custom_group', $this->model('usergroup')->get_custom_group_list());
         TPL::assign('menu_list', $this->model('admin')->fetch_menu_list(403));
         TPL::output('admin/user/group_list');
     }
 
     public function group_edit_action()
     {
-        $this->crumb(AWS_APP::lang()->_t('修改用户组'), "admin/user/group_list/");
+        $this->crumb(_t('修改用户组'));
 
-        if (!$this->user_info['permission']['is_administrator'])
+        if (! $group = $this->model('usergroup')->get_user_group_by_id(H::GET('group_id')))
         {
-            H::redirect_msg(AWS_APP::lang()->_t('你没有访问权限, 请重新登录'), '/');
-        }
-
-        if (! $group = $this->model('account')->get_user_group_by_id($_GET['group_id']))
-        {
-            H::redirect_msg(AWS_APP::lang()->_t('用户组不存在'), '/admin/user/group_list/');
+            H::redirect_msg(_t('用户组不存在'), '/admin/user/group_list/');
         }
 
         TPL::assign('group', $group);
@@ -150,25 +145,18 @@ class user extends AWS_ADMIN_CONTROLLER
 
     public function edit_action()
     {
-        $this->crumb(AWS_APP::lang()->_t('编辑用户资料'), 'admin/user/edit/');
+        $this->crumb(_t('编辑用户资料'));
 
-        if (!$user = $this->model('account')->get_user_info_by_uid($_GET['uid'], TRUE))
+        if (!$user = $this->model('account')->get_user_info_by_uid(H::GET('uid')))
         {
-            H::redirect_msg(AWS_APP::lang()->_t('用户不存在'), '/admin/user/list/');
+            H::redirect_msg(_t('用户不存在'), '/admin/user/list/');
         }
 
-        if ($user['group_id'] == 1 AND !$this->user_info['permission']['is_administrator'])
-        {
-            H::redirect_msg(AWS_APP::lang()->_t('你没有权限编辑管理员账号'), '/admin/user/list/');
-        }
-
-        $user['recovery_code'] = $this->model('active')->calc_user_recovery_code($user['uid']);
-
-		TPL::assign('member_group', $this->model('account')->get_user_group_by_id(
-			$this->model('reputation')->get_reputation_group_id_by_reputation($user['reputation'])
+		TPL::assign('member_group', $this->model('usergroup')->get_user_group_by_id(
+			$this->model('usergroup')->get_group_id_by_reputation($user['reputation'])
 		));
 
-        TPL::assign('system_group', $this->model('account')->get_user_group_list(0));
+        TPL::assign('system_group', $this->model('usergroup')->get_normal_group_list());
         TPL::assign('user', $user);
         TPL::assign('menu_list', $this->model('admin')->fetch_menu_list(402));
 
@@ -177,113 +165,42 @@ class user extends AWS_ADMIN_CONTROLLER
 
     public function user_add_action()
     {
-        $this->crumb(AWS_APP::lang()->_t('添加用户'), "admin/user/list/user_add/");
+        $this->crumb(_t('添加用户'));
 
         TPL::assign('menu_list', $this->model('admin')->fetch_menu_list(402));
 
-        TPL::assign('system_group', $this->model('account')->get_user_group_list(0));
+        TPL::assign('system_group', $this->model('usergroup')->get_normal_group_list());
 
         TPL::output('admin/user/add');
     }
 
 
-    public function verify_approval_list_action()
-    {
-        $approval_list = $this->model('verify')->approval_list($_GET['page'], $_GET['status'], $this->per_page);
-
-        $total_rows = $this->model('verify')->found_rows();
-
-        foreach ($approval_list AS $key => $val)
-        {
-            if (!$uids[$val['uid']])
-            {
-                $uids[$val['uid']] = $val['uid'];
-            }
-        }
-
-        TPL::assign('pagination', AWS_APP::pagination()->initialize(array(
-            'base_url' => get_js_url('/admin/user/verify_approval_list/status-' . $_GET['status']),
-            'total_rows' => $total_rows,
-            'per_page' => $this->per_page
-        ))->create_links());
-
-        $this->crumb(AWS_APP::lang()->_t('认证审核'), 'admin/user/verify_approval_list/');
-
-        TPL::assign('users_info', $this->model('account')->get_user_info_by_uids($uids));
-        TPL::assign('approval_list', $approval_list);
-        TPL::assign('menu_list', $this->model('admin')->fetch_menu_list(401));
-
-        TPL::output('admin/user/verify_approval_list');
-    }
-
-    public function register_approval_list_action()
-    {
-        if (get_setting('register_valid_type') != 'approval')
-        {
-            H::redirect_msg(AWS_APP::lang()->_t('未启用新用户注册审核'), '/admin/');
-        }
-
-        $user_list = $this->model('people')->fetch_page('users', 'group_id = 3', 'uid ASC', $_GET['page'], $this->per_page);
-
-        $total_rows = $this->model('people')->found_rows();
-
-        TPL::assign('pagination', AWS_APP::pagination()->initialize(array(
-            'base_url' => get_js_url('/admin/user/register_approval_list/'),
-            'total_rows' => $total_rows,
-            'per_page' => $this->per_page
-        ))->create_links());
-
-        $this->crumb(AWS_APP::lang()->_t('注册审核'), 'admin/user/register_approval_list/');
-
-        TPL::assign('list', $user_list);
-        TPL::assign('menu_list', $this->model('admin')->fetch_menu_list(408));
-
-        TPL::output('admin/user/register_approval_list');
-    }
-
-    public function verify_approval_edit_action()
-    {
-        if (!$verify_apply = $this->model('verify')->fetch_apply($_GET['id']))
-        {
-            H::redirect_msg(AWS_APP::lang()->_t('审核认证不存在'), '/admin/user/register_approval_list/');
-        }
-
-        TPL::assign('verify_apply', $verify_apply);
-        TPL::assign('user', $this->model('account')->get_user_info_by_uid($_GET['id']));
-
-        TPL::assign('menu_list', $this->model('admin')->fetch_menu_list(401));
-
-        $this->crumb(AWS_APP::lang()->_t('编辑认证审核资料'), 'admin/user/verify_approval_list/');
-
-        TPL::output('admin/user/verify_approval_edit');
-    }
-
     public function currency_log_action()
     {
-        if ($log = $this->model('currency')->fetch_page('currency_log', 'uid = ' . intval($_GET['uid']), 'id DESC', $_GET['page'], 50))
+        if ($log = $this->model('currency')->fetch_page('currency_log', ['uid', 'eq', H::GET('uid'), 'i'], 'id DESC', H::GET('page'), 50))
         {
-            TPL::assign('pagination', AWS_APP::pagination()->initialize(array(
-                'base_url' => get_js_url('/admin/user/currency_log/uid-' . intval($_GET['uid'])),
-                'total_rows' => $this->model('currency')->found_rows(),
+            TPL::assign('pagination', AWS_APP::pagination()->create(array(
+                'base_url' => url_rewrite('/admin/user/currency_log/uid-' . H::GET_I('uid')),
+                'total_rows' => $this->model('currency')->total_rows(),
                 'per_page' => 50
-            ))->create_links());
+            )));
 
             foreach ($log AS $key => $val)
             {
                 $parse_items[$val['id']] = array(
                     'item_id' => $val['item_id'],
-                    'action' => $val['action']
+                    'item_type' => $val['item_type']
                 );
             }
 
             TPL::assign('currency_log', $log);
-            TPL::assign('currency_log_detail', $this->model('currency')->parse_log_item($parse_items));
+            TPL::assign('currency_log_detail', $this->model('currency')->parse_log_items($parse_items));
         }
 
-        TPL::assign('user', $this->model('account')->get_user_info_by_uid($_GET['uid']));
+        TPL::assign('user', $this->model('account')->get_user_info_by_uid(H::GET('uid')));
         TPL::assign('menu_list', $this->model('admin')->fetch_menu_list(402));
 
-        $this->crumb(AWS_APP::lang()->_t('积分日志'), '/admin/user/currency_log/uid-' . $_GET['uid']);
+        $this->crumb(_t('代币日志'));
 
         TPL::output('admin/user/currency_log');
     }

@@ -20,18 +20,18 @@ if (!defined('IN_ANWSION'))
 
 class feature_class extends AWS_MODEL
 {
-	public function get_feature_list($order = 'id DESC', $page = null, $limit = null)
+	public function get_feature_list($page = null, $limit = null)
 	{
-		return $this->fetch_page('feature', null, $order, $page, $limit);
+		return $this->fetch_page('feature', null, 'sort DESC', $page, $limit);
 	}
 
 	public function get_enabled_feature_list()
 	{
 		if (!$list = AWS_APP::cache()->get('feature_list'))
 		{
-			$list = $this->fetch_all('feature', 'enabled = 1', 'sort ASC');
+			$list = $this->fetch_all('feature', ['enabled', 'eq', 1], 'sort DESC');
 
-			AWS_APP::cache()->set('feature_list', $list, get_setting('cache_level_low'), 'feature_list');
+			AWS_APP::cache()->set('feature_list', $list, S::get('cache_level_low'), 'feature_list');
 		}
 		return $list;
 	}
@@ -49,7 +49,7 @@ class feature_class extends AWS_MODEL
 	{
 		AWS_APP::cache()->cleanGroup('feature_list');
 
-		return $this->update('feature', $update_data, 'id = ' . intval($feature_id));
+		return $this->update('feature', $update_data, ['id', 'eq', $feature_id, 'i']);
 	}
 
 	public function get_feature_by_id($feature_id)
@@ -59,12 +59,12 @@ class feature_class extends AWS_MODEL
 			return false;
 		}
 
-		return $this->fetch_row('feature', 'id = ' . intval($feature_id));
+		return $this->fetch_row('feature', ['id', 'eq', $feature_id, 'i']);
 	}
 
 	public function delete_feature($feature_id)
 	{
-		$this->delete('feature', 'id = ' . intval($feature_id));
+		$this->delete('feature', ['id', 'eq', $feature_id, 'i']);
 
 		AWS_APP::cache()->cleanGroup('feature_list');
 
@@ -75,7 +75,7 @@ class feature_class extends AWS_MODEL
 	{
 		$this->update('feature', array(
 			'enabled' => intval($status)
-		), 'id = ' . intval($id));
+		), ['id', 'eq', $id, 'i']);
 
 		AWS_APP::cache()->cleanGroup('feature_list');
 

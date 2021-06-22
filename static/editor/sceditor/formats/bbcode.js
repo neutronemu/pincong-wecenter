@@ -31,7 +31,7 @@
 	// causes a double line break.
 	var IE_BR_FIX = IE_VER && IE_VER < 11;
 
-	var EMOTICON_DATA_ATTR = 'data-sceditor-emoticon';
+
 
 	var getEditorCommand = sceditor.command.get;
 
@@ -231,19 +231,7 @@
 		quote: {
 			txtExec: ['[quote]', '[/quote]']
 		},
-		youtube: {
-			txtExec: function (caller) {
-				var editor = this;
 
-				getEditorCommand('youtube')._dropDown(
-					editor,
-					caller,
-					function (id) {
-						editor.insertText('[youtube]' + id + '[/youtube]');
-					}
-				);
-			}
-		},
 		rtl: {
 			txtExec: ['[rtl]', '[/rtl]']
 		},
@@ -259,10 +247,10 @@
 				b: null,
 				strong: null
 			},
-			styles: {
-				// 401 is for FF 3.5
-				'font-weight': ['bold', 'bolder', '401', '700', '800', '900']
-			},
+			//styles: {
+			//	// 401 is for FF 3.5
+			//	'font-weight': ['bold', 'bolder', '401', '700', '800', '900']
+			//},
 			format: '[b]{0}[/b]',
 			html: '<strong>{0}</strong>'
 		},
@@ -517,22 +505,6 @@
 		},
 		// END_COMMAND
 
-		// START_COMMAND: Emoticons
-		emoticon: {
-			allowsEmpty: true,
-			tags: {
-				img: {
-					src: null,
-					'data-sceditor-emoticon': null
-				}
-			},
-			format: function (element, content) {
-				return attr(element, EMOTICON_DATA_ATTR) + content;
-			},
-			html: '{0}'
-		},
-		// END_COMMAND
-
 		// START_COMMAND: Horizontal Rule
 		hr: {
 			tags: {
@@ -563,21 +535,18 @@
 						return element.style ? element.style[name] : null;
 					};
 
-				// check if this is an emoticon image
-				if (attr(element, EMOTICON_DATA_ATTR)) {
-					return content;
-				}
 
-				width = attr(element, 'width') || style('width');
-				height = attr(element, 'height') || style('height');
+
+				//width = attr(element, 'width') || style('width');
+				//height = attr(element, 'height') || style('height');
 
 				// only add width and height if one is specified
-				if ((element.complete && (width || height)) ||
-					(width && height)) {
+				//if ((element.complete && (width || height)) ||
+				//	(width && height)) {
 
-					attribs = '=' + dom.width(element) + 'x' +
-						dom.height(element);
-				}
+				//	attribs = '=' + dom.width(element) + 'x' +
+				//		dom.height(element);
+				//}
 
 				return '[img' + attribs + ']' + attr(element, 'src') + '[/img]';
 			},
@@ -690,7 +659,8 @@
 					}
 				}
 
-				return '[quote' + author + ']' + content + '[/quote]';
+				//return '[quote' + author + ']' + content + '[/quote]';
+				return '[quote]' + content + '[/quote]';
 			},
 			html: function (token, attrs, content) {
 				if (attrs.defaultattr) {
@@ -780,24 +750,7 @@
 		},
 		// END_COMMAND
 
-		// START_COMMAND: YouTube
-		youtube: {
-			allowsEmpty: true,
-			tags: {
-				iframe: {
-					'data-youtube-id': null
-				}
-			},
-			format: function (element, content) {
-				element = attr(element, 'data-youtube-id');
 
-				return element ? '[youtube]' + element + '[/youtube]' : content;
-			},
-			html: '<iframe width="560" height="315" frameborder="0" ' +
-				'src="https://www.youtube.com/embed/{0}?wmode=opaque" ' +
-				'data-youtube-id="{0}" allowfullscreen></iframe>'
-		},
-		// END_COMMAND
 
 
 		// START_COMMAND: Rtl
@@ -2491,10 +2444,6 @@
 					if (typeof vChildren === 'object') {
 						isValidChild = vChildren.indexOf(tag) > -1;
 
-						// Emoticons should always be converted
-						if (is(node, 'img') && attr(node, EMOTICON_DATA_ATTR)) {
-							isValidChild = true;
-						}
 
 						// if this tag is one of the parents allowed children
 						// then set this tags allowed children to whatever it

@@ -17,8 +17,8 @@ $(function () {
 
     //图表数据接入
     var echart = new Echarts('#main', 'line', G_BASE_URL + '/admin/ajax/statistic/?tag=new_user,user_valid&start_date=' + dateArr[3] + '&end_date=' + dateArr[2]);
-    var echart2 = new Echarts('#main2', 'line', G_BASE_URL + '/admin/ajax/statistic/?tag=new_question,new_answer,new_topic,new_favorite_item,new_question_redirect&start_date=' + dateArr[3] + '&end_date=' + dateArr[2]);
-    var echart3 = new Echarts('#main3', 'line', G_BASE_URL + '/admin/ajax/statistic/?tag=new_answer_vote,new_answer_thanks,new_question_thanks&start_date=' + dateArr[3] + '&end_date=' + dateArr[2]);
+    var echart2 = new Echarts('#main2', 'line', G_BASE_URL + '/admin/ajax/statistic/?tag=new_question,new_answer,new_topic&start_date=' + dateArr[3] + '&end_date=' + dateArr[2]);
+    var echart3 = new Echarts('#main3', 'line', G_BASE_URL + '/admin/ajax/statistic/?tag=new_answer_vote&start_date=' + dateArr[3] + '&end_date=' + dateArr[2]);
 
 
     // 左侧菜单收缩重新渲染图表
@@ -265,24 +265,12 @@ Echarts.prototype = {
                 arr.push('新注册用户');
                 break;
 
-            case 'user_valid':
-                arr.push('新激活用户');
-                break;
-
             case 'new_topic':
                 arr.push('新增话题');
                 break;
 
             case 'new_answer_vote':
                 arr.push('新增回复投票');
-                break;
-
-            case 'new_favorite_item':
-                arr.push('新增收藏');
-                break;
-
-            case 'new_question_redirect':
-                arr.push('新增问题重定向');
                 break;
             }
         }

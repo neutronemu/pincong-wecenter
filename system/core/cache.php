@@ -23,23 +23,9 @@ class core_cache
 	);
 
 	// 支持 File, Memcached, APC, Xcache, 手册参考: http://framework.zend.com/manual/zh/zend.cache.html
-	private $backendName = 'File';
+	private $backendName;
 
-	private $backendOptions = array(
-		/*
-		// Memcache 配置
-		'servers' => array(
-			array(
-				'host' => '127.0.0.1',
-				'port' => 11211,
-				'persistent' => true,
-				'timeout' => 5,
-				'compression' => false,	// 压缩
-				'compatibility' => false	// 兼容旧版 Memcache servers
-			)
-		)
-		*/
-	);
+	private $backendOptions;
 
 	private $groupPrefix = '_group_';
 	private $cachePrefix = '_cache_';
@@ -47,17 +33,44 @@ class core_cache
 
 	public function __construct()
 	{
-		$file_name_prefix = substr(md5(G_COOKIE_HASH_KEY), 0, 6);
+		$file_name_prefix = G_CACHE_NAMESPACE;
 
 		$this->groupPrefix = $file_name_prefix . $this->groupPrefix;
 		$this->cachePrefix = $file_name_prefix . $this->cachePrefix;
 
-		if (defined('IN_SAE'))
+		if (G_CACHE_TYPE == 'Memcache')
 		{
-			$this->backendName = 'Memcached';
+			$this->backendName = 'Memcached'; // 注意区别
+
+			$this->backendOptions = array(
+				// Memcache 配置
+				'servers' => array(
+					array(
+						'host' => G_CACHE_TYPE_MEMCACHED_HOST,
+						'port' => G_CACHE_TYPE_MEMCACHED_PORT,
+						'timeout' => 5,
+					)
+				)
+			);
 		}
-		else if ($this->backendName == 'File')
+		else if (G_CACHE_TYPE == 'Memcached')
 		{
+			$this->backendName = 'Libmemcached'; // 注意区别
+
+			$this->backendOptions = array(
+				// Memcached 配置
+				'servers' => array(
+					array(
+						'host' => G_CACHE_TYPE_MEMCACHED_HOST,
+						'port' => G_CACHE_TYPE_MEMCACHED_PORT,
+					)
+				)
+			);
+		}
+		else if (G_CACHE_TYPE == 'File')
+		{
+			$this->backendName = 'File';
+
 			$cache_dir = ROOT_PATH . 'cache/';
 
 			if (!file_exists($cache_dir . 'index.html'))
@@ -105,20 +118,7 @@ class core_cache
 
 		if ($group)
 		{
-			if (is_array($group))
-			{
-				if (count($group) > 0)
-				{
-					foreach ($group as $cg)
-					{
-						$this->setGroup($cg, $key, $lifetime);
-					}
-				}
-			}
-			else
-			{
-				$this->setGroup($group, $key, $lifetime);
-			}
+			$this->setGroup($group, $key, $lifetime);
 		}
 
 		if (AWS_APP::config()->get('system')->debug)

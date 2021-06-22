@@ -14,24 +14,40 @@
 
 class H
 {
-	public static function get_file_ext($file_name, $merge_type = true)
+	/**
+	 * 获取 COOKIE
+	 *
+	 * @param $name
+	 */
+	public static function get_cookie($name)
 	{
-		$file_ext = end(explode('.', $file_name));
-
-		if ($merge_type)
+		if (isset($_COOKIE[G_COOKIE_PREFIX . '_' . $name]))
 		{
-			if ($file_ext == 'jpeg' or $file_ext == 'jpe')
-			{
-				$file_ext = 'jpg';
-			}
-
-			if ($file_ext == 'htm')
-			{
-				$file_ext = 'html';
-			}
+			return $_COOKIE[G_COOKIE_PREFIX . '_' . $name];
 		}
 
-		return $file_ext;
+		return false;
+	}
+
+	/**
+	 * 设置 COOKIE
+	 *
+	 * @param $name
+	 * @param $value
+	 * @param $expire
+	 * @param $path
+	 * @param $domain
+	 * @param $secure
+	 * @param $httponly
+	 */
+	public static function set_cookie($name, $value = '', $expire = null, $path = '/', $domain = null, $secure = false, $httponly = true)
+	{
+		if (!$domain AND G_COOKIE_DOMAIN)
+		{
+			$domain = G_COOKIE_DOMAIN;
+		}
+
+		return setcookie(G_COOKIE_PREFIX . '_' . $name, $value, $expire, $path, $domain, $secure, $httponly);
 	}
 
 	/**
@@ -41,222 +57,259 @@ class H
 	 */
 	public static function ajax_json_output($array)
 	{
-		//HTTP::no_cache_header('text/javascript');
+		//H::no_cache_header('text/json');
 
 		echo str_replace(array("\r", "\n", "\t"), '', json_encode($array));
 		exit;
 	}
 
-	public static function redirect_msg($message, $url = NULL, $interval = 5, $exit = true)
+	public static function ajax_error($err)
+	{
+		H::ajax_json_output(array(
+			'err' => $err,
+			'errno' => -1,
+		));
+	}
+
+	public static function ajax_success()
+	{
+		H::ajax_json_output(array(
+			'errno' => 1,
+		));
+	}
+
+	public static function ajax_response($data)
+	{
+		H::ajax_json_output(array(
+			'rsm' => $data,
+		));
+	}
+
+	public static function ajax_location($url)
+	{
+		H::ajax_json_output(array(
+			'url' => $url,
+			'rsm' => array(
+				'url' => $url,
+			),
+		));
+	}
+
+	public static function redirect_msg($message, $url = null, $interval = 5)
 	{
 		TPL::assign('message', $message);
-		TPL::assign('url_bit', HTTP::parse_redirect_url($url));
+		if ($url AND !is_website($url))
+		{
+			$url = url_rewrite($url);
+		}
+		TPL::assign('url_bit', $url);
 		TPL::assign('interval', $interval);
 
-		TPL::output('global/show_message');
-
-		if ($exit)
-		{
-			die;
-		}
+		echo TPL::render('global/show_message');
+		exit;
 	}
 
-	/** 生成 Options **/
-	public static function display_options($param, $default = '_DEFAULT_', $default_key = 'key')
+	public static function redirect($url)
 	{
-		if (is_array($param))
+		if (!$url)
 		{
-			$keyindex = 0;
-
-			foreach ($param as $key => $value)
-			{
-				if ($default_key == 'value')
-				{
-					$output .= '<option value="' . $key . '"' . (($value == $default) ? '  selected' : '') . '>' . $value . '</option>';
-				}
-				else
-				{
-					$output .= '<option value="' . $key . '"' . (($key == $default) ? '  selected' : '') . '>' . $value . '</option>';
-				}
-			}
-
+			$url = '/';
+		}
+		if (!is_website($url))
+		{
+			$url = url_rewrite($url);
 		}
 
-		return $output;
+		header('Location: ' . $url);
+		exit;
 	}
 
 	/**
-	 * 敏感词替换
-	 * @param unknown_type $content
-	 * @return mixed
+	 * NO CACHE 文件头
+	 *
+	 * @param $type
+	 * @param $charset
 	 */
-	public static function sensitive_words_replace($content)
+	public static function no_cache_header($type = 'text/html', $charset = 'utf-8')
 	{
-		if (!$content)
-		{
-			return $content;
-		}
-
-		if (!$sensitive_words_replacement = get_setting('sensitive_words_replacement'))
-		{
-			return $content;
-		}
-
-		if (!$sensitive_words = get_setting('sensitive_words'))
-		{
-			return $content;
-		}
-
-		$sensitive_words = explode("\n", $sensitive_words);
-
-		foreach($sensitive_words as $word)
-		{
-			$word = trim($word);
-
-			if (!$word)
-			{
-				continue;
-			}
-
-			if (substr($word, 0, 1) == '{' AND substr($word, -1, 1) == '}')
-			{
-				$regex[] = substr($word, 1, -1);
-			}
-			else
-			{
-				$content = str_ireplace($word, $sensitive_words_replacement, $content);
-			}
-		}
-
-		if (isset($regex))
-		{
-			preg_replace($regex, $sensitive_words_replacement, $content);
-		}
-
-		return $content;
+		header('Expires: Mon, 26 Jul 1997 05:00:00 GMT'); // Date in the past
+		header('Last-Modified: ' . gmdate('D, d M Y H:i:s') . ' GMT'); // always modified
+		header('Cache-Control: no-cache, must-revalidate'); // HTTP/1.1
+		header('Pragma: no-cache');
+		header('Content-Type: ' . $type . '; charset=' . $charset . '');
 	}
 
-	/**
-	 * 是否包含敏感词
-	 * @param string $content
-	 * @return mixed
-	 */
-	public static function sensitive_word_exists($content)
+	public static function error_403()
 	{
-		if (!$content)
+		if ($_POST['_post_type'] == 'ajax')
 		{
-			return false;
+			H::ajax_error('HTTP/1.1 403 Forbidden');
 		}
-
-		if (!$sensitive_words = get_setting('sensitive_words'))
+		else
 		{
-			return false;
+			header('HTTP/1.1 403 Forbidden');
+
+			echo TPL::render('global/error_403');
+			exit;
 		}
-
-		$sensitive_words = explode("\n", $sensitive_words);
-
-		foreach($sensitive_words as $word)
-		{
-			$word = trim($word);
-
-			if (!$word)
-			{
-				continue;
-			}
-
-			if (substr($word, 0, 1) == '{' AND substr($word, -1, 1) == '}')
-			{
-				if (preg_match(substr($word, 1, -1), $content))
-				{
-					return true;
-				}
-			}
-			else
-			{
-				if (stripos($content, $word) !== false)
-				{
-					return true;
-				}
-			}
-		}
-
-		return false;
 	}
 
-	// 命中返回 true, 未命中返回 false
-	public static function content_url_whitelist_check($url)
+	public static function error_404()
 	{
-		if (!$url or !get_setting('content_url_whitelist'))
+		if ($_POST['_post_type'] == 'ajax')
 		{
-			return false;
+			H::ajax_error('HTTP/1.1 404 Not Found');
 		}
-
-		$whitelist = explode("\n", get_setting('content_url_whitelist'));
-
-		foreach($whitelist as $word)
+		else
 		{
-			$word = trim($word);
+			header('HTTP/1.1 404 Not Found');
 
-			if (!$word)
-			{
-				continue;
-			}
-
-			if (substr($word, 0, 1) == '{' AND substr($word, -1, 1) == '}')
-			{
-				if (preg_match(substr($word, 1, -1), $url))
-				{
-					return true;
-				}
-			}
-			else
-			{
-				if (stripos($url, $word) === 0)
-				{
-					return true;
-				}
-			}
+			echo TPL::render('global/error_404');
+			exit;
 		}
-
-		return false;
 	}
 
-	// 命中返回 true, 未命中返回 false
-	public static function hyperlink_blacklist_check($url)
+
+	public static function is_post()
 	{
-		if (!$url or !get_setting('hyperlink_blacklist'))
+		return ($_SERVER['REQUEST_METHOD'] == 'POST');
+	}
+
+
+	public static function GET($key)
+	{
+		if (!isset($_GET[$key]))
 		{
-			return false;
+			return null;
+		}
+		return $_GET[$key];
+	}
+
+	public static function POST($key)
+	{
+		if (!isset($_POST[$key]))
+		{
+			return null;
+		}
+		return $_POST[$key];
+	}
+
+	public static function GET_I($key)
+	{
+		if (!isset($_GET[$key]))
+		{
+			return 0;
+		}
+		return self::_convert_request($_GET[$key], 'i');
+	}
+
+	public static function GET_D($key)
+	{
+		if (!isset($_GET[$key]))
+		{
+			return 0;
+		}
+		return self::_convert_request($_GET[$key], 'd');
+	}
+
+	public static function GET_S($key)
+	{
+		if (!isset($_GET[$key]))
+		{
+			return '';
+		}
+		return self::_convert_request($_GET[$key], 's');
+	}
+
+	public static function POST_I($key)
+	{
+		if (!isset($_POST[$key]))
+		{
+			return 0;
+		}
+		return self::_convert_request($_POST[$key], 'i');
+	}
+
+	public static function POST_D($key)
+	{
+		if (!isset($_POST[$key]))
+		{
+			return 0;
+		}
+		return self::_convert_request($_POST[$key], 'd');
+	}
+
+	public static function POST_S($key)
+	{
+		if (!isset($_POST[$key]))
+		{
+			return '';
+		}
+		return self::_convert_request($_POST[$key], 's');
+	}
+
+	public static function POSTS_I($key)
+	{
+		if (!isset($_POST[$key]))
+		{
+			return array();
+		}
+		return self::_convert_request_array($_POST[$key], 'i');
+	}
+
+	public static function POSTS_D($key)
+	{
+		if (!isset($_POST[$key]))
+		{
+			return array();
+		}
+		return self::_convert_request_array($_POST[$key], 'd');
+	}
+
+	public static function POSTS_S($key)
+	{
+		if (!isset($_POST[$key]))
+		{
+			return array();
+		}
+		return self::_convert_request_array($_POST[$key], 's');
+	}
+
+	private static function _convert_request($val, $type)
+	{
+		if ($type == 'i') // int
+		{
+			return intval($val);
+		}
+		else if ($type == 'd') // double
+		{
+			$val = floatval($val);
+			if (is_infinite($val) OR is_nan($val))
+			{
+				return 0;
+			}
+			return $val;
 		}
 
-		$whitelist = explode("\n", get_setting('hyperlink_blacklist'));
-
-		foreach($whitelist as $word)
+		if (!is_string($val))
 		{
-			$word = trim($word);
-
-			if (!$word)
-			{
-				continue;
-			}
-
-			if (substr($word, 0, 1) == '{' AND substr($word, -1, 1) == '}')
-			{
-				if (preg_match(substr($word, 1, -1), $url))
-				{
-					return true;
-				}
-			}
-			else
-			{
-				if (stripos($url, $word) === 0)
-				{
-					return true;
-				}
-			}
+			return '';
 		}
+		return remove_invisible_characters(multibyte_trim($val));
+	}
 
-		return false;
+	private static function _convert_request_array($data, $type)
+	{
+		if (is_array($data))
+		{
+			foreach ($data as &$val)
+			{
+				$val = self::_convert_request($val, $type);
+			}
+			unset($val);
+			return $data;
+		}
+		return array();
 	}
 
 }

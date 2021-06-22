@@ -46,73 +46,25 @@ class admin_class extends AWS_MODEL
         return $admin_menu;
     }
 
-    public function set_admin_login($uid)
+    public function admin_login()
     {
-        AWS_APP::session()->admin_login = AWS_APP::crypt()->encode(json_encode(array(
-            'uid' => $uid
-        )));
+        AWS_APP::auth()->admin_authorize();
     }
 
     public function admin_logout()
     {
-        if (isset(AWS_APP::session()->admin_login))
-        {
-            unset(AWS_APP::session()->admin_login);
-        }
-    }
-
-    public function notifications_crond()
-    {
-        $admin_notifications = AWS_APP::cache()->get('admin_notifications');
-
-        if (!$admin_notifications)
-        {
-            $admin_notifications = get_setting('admin_notifications');
-        }
-
-        $admin_notifications = array(
-                                // 注册审核
-                                'register_approval' => $this->count('users', 'group_id = 3'),
-                                // 认证审核
-                                'verify_approval' => $this->count('verify_apply', 'status = 0')
-                            );
-
-
-        AWS_APP::cache()->set('admin_notifications', $admin_notifications, 1800);
-
-        return $this->model('setting')->set_vars(array('admin_notifications' => $admin_notifications));
+        AWS_APP::auth()->wipe_token();
     }
 
     public function get_notifications_texts()
     {
-        $notifications = AWS_APP::cache()->get('admin_notifications');
-
-        if (!$notifications)
-        {
-            $notifications = get_setting('admin_notifications');
-        }
-
-        if (!$notifications)
-        {
-            return false;
-        }
-
-        if (get_setting('register_valid_type') == 'approval' AND $notifications['register_approval'])
-        {
-            $notifications_texts[] = array(
-                                            'url' => 'admin/user/register_approval_list/',
-                                            'text' => AWS_APP::lang()->_t('有 %s 个新用户待审核', $notifications['register_approval'])
-                                        );
-        }
-
-        if ($notifications['verify_approval'])
-        {
-            $notifications_texts[] = array(
-                                            'url' => 'admin/user/verify_approval_list/',
-                                            'text' => AWS_APP::lang()->_t('有 %s 个认证申请待审核', $notifications['verify_approval'])
-                                        );
-        }
+/*
+        $notifications_texts[] = array(
+            'url' => 'url',
+            'text' => 'text'
+        );
 
         return $notifications_texts;
+*/
     }
 }
